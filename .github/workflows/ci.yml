@@ -1,0 +1,17 @@
+name: ci
+# Headless core gate: builds the solution and runs SrpgCore.Verify.
+# Runs on plain GitHub runners; no game, no window needed.
+on: [push, pull_request]
+
+jobs:
+  headless:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: build
+        run: dotnet build SrpgCore.slnx -c Release --nologo
+      - name: SrpgCore.Verify (463/0)
+        run: dotnet run --project SrpgCore.Verify/SrpgCore.Verify.csproj --no-build -c Release --nologo
