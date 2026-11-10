@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Engine-agnostic SRPG core: pure C#, no engine references, no packages.
+         netstandard2.0 keeps it consumable from Prowl (.NET 10), Flax, Godot, Unity. -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>SrpgCore</AssemblyName>
+    <RootNamespace>SrpgCore</RootNamespace>
+  </PropertyGroup>
+
+</Project>

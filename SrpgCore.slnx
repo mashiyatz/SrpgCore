@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="SrpgCore/SrpgCore.csproj" />
+  <Project Path="SrpgCore.Verify/SrpgCore.Verify.csproj" />
+</Solution>
