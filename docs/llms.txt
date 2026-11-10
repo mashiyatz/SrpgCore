@@ -1,0 +1,24 @@
+# SrpgCore Docs
+
+> Searchable documentation for SrpgCore, an engine-agnostic Fire Emblem-style SRPG core library in C# (netstandard2.0, zero dependencies).
+> Full text: search-index.json. Raw pages: docs/<slug>.md.
+
+## Pages
+
+- [API: SrpgCore.Combat](docs/api-combat.md): Guide: combat .
+- [API: SrpgCore.Data](docs/api-data.md): Guide: data .
+- [API: SrpgCore.Events](docs/api-events.md): Guide: events .
+- [API: SrpgCore.Grid](docs/api-grid.md): Guide: grid .
+- [API: SrpgCore.Random](docs/api-random.md): Guide: overview .
+- [API: SrpgCore.Regions](docs/api-regions.md): Guide: chapter-format .
+- [API: SrpgCore.Tactics](docs/api-tactics.md): Guide: tactics .
+- [Architecture](docs/architecture.md): Dependencies flow one way: Tactics → Events / Combat / Data / Grid / Random . Grid and Random depend on nothing. Nothing references an engine.
+- [Chapter format](docs/chapter-format.md): Chapters are single Markdown files ( .md ), one per chapter. MarkdownChapterLoader.Load(text, fileName) parses a file into a Chapter , collecting every error with file + line instead of failing fast.
+- [Chapter](docs/chapter.md): Chapters can be authored as Markdown files — see chapter format ( MarkdownChapterLoader ), which parses boards, deployments, armory, regions, and events with file-and-line errors.
+- [Combat](docs/combat.md): Formulas follow GBA FE7/8 with tunables centralized in CombatRules (triangle bonuses, doubling threshold, hit mode, effective multiplier, TorchVisionBonus ) — never scattered constants.
+- [Data](docs/data.md): GBA-style block: MaxHP , Power (covers Str or Mag — the weapon's IsMagic flag selects Def vs Res on the target), Skill , Speed , Luck , Defense , Resistance , Constitution (weapon-weight relief for...
+- [Events](docs/events.md): Trigger/condition/command scripting: every event is a unique name plus a trigger, a condition, and an ordered command list. Full member reference: API: Events .
+- [Grid](docs/grid.md): GridPoint is a zero-based immutable (X, Y) struct: X is the column (east), Y is the row (south). It offers Manhattan distance, value equality, and hashing, so it works as a dictionary key throughou...
+- [Hosting](docs/hosting.md): SrpgCore has no engine references ( netstandard2.0 , no packages), so every host follows the same shape: reference the library, keep presentation in thin adapters, and call the same pure functions ...
+- [Overview](docs/overview.md): SrpgCore is an engine-agnostic Fire Emblem-style SRPG core library in C#. Pure logic — grid, data, combat, events, tactics, chapters — with no rendering, no engine API, and no third-party packages....
+- [Tactics](docs/tactics.md): TurnManager cycles a team list in order (default player, enemy, ally, other ). Teams with no live units are skipped — except the first team, which is never skipped. TurnNumber starts at 1 and advan...

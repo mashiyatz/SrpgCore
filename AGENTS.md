@@ -25,13 +25,13 @@ a web backend, Prowl, ...) consumes it the same way. This is the IP; keep it eng
 
 - `dotnet build SrpgCore.slnx` — build the library and verifier.
 - `dotnet run --project SrpgCore.Verify/SrpgCore.Verify.csproj` — run all checks
-  (306 checks across grid, RNG, combat, events, phases, objectives, AI, chapters,
+  (463 checks across grid, RNG, combat, events, phases, objectives, AI, chapters,
   durability/effectiveness, experience, staves, new event verbs, terrain-aware AI,
   seize, saves, promotion, fog, rescue, skills, support, statuses, staff accuracy,
   combat gains, skill/support battle math, battle triggers, phase tick, deployment
   selection, talk, inventory verbs, interactables, weapon ranks, ally AI,
-  fog-filtered threat/AI, AI tie-breaks, dance, canto, shove/swap/steal/healer/hold/regen/convoy/support-tick/replay-hash, warp/torch, set_terrain, MaxInventory, ReversesTriangle, FormationRegion, BecomesTerrain; exits non-zero on failure). Keep this figure in sync with
-  `../SRPGDocs/docs/overview.md`.
+  fog-filtered threat/AI, AI tie-breaks, dance, canto, shove/swap/steal/healer/hold/regen/convoy/support-tick/replay-hash, warp/torch, set_terrain, MaxInventory, ReversesTriangle, FormationRegion, BecomesTerrainKey, shop gold/buy/sell; exits non-zero on failure). Keep this figure in sync with
+  `README.md` and the sibling SRPGDocs `docs/overview.md`.
 - No other CLI build/test/lint exists for this project.
 
 ## Conventions
@@ -51,8 +51,9 @@ a web backend, Prowl, ...) consumes it the same way. This is the IP; keep it eng
   property/field/enum member needs `<summary>`. Tag text stays on one line with
   no `|` characters. SRPGDocs generates its per-function API reference from
   these (`scripts/build-api.ts`, warns on gaps) — keep them accurate.
-- Do not create README, test harness, or CI config unprompted — this project has
-  none beyond `SrpgCore.Verify`.
+- Do not create test harness or CI config unprompted — this project has
+  none beyond `SrpgCore.Verify`. `README.md` is the public GitHub landing page;
+  keep it in sync with actual behavior (Verify is the authority).
 
 ## Next steps
 
