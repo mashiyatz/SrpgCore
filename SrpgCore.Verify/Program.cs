@@ -39,6 +39,8 @@ namespace SrpgCore.Verify
             CombatChecks();
             Console.WriteLine("[events]");
             EventChecks();
+            Console.WriteLine("[event-vars]");
+            EventVarsChecks();
             Console.WriteLine("[rng-streams]");
             RngStreamChecks();
             Console.WriteLine("[hit-modes]");
@@ -292,6 +294,55 @@ namespace SrpgCore.Verify
             Check(sayRunner.Dialogue.Count == 1 && sayRunner.Dialogue[0].speaker == "Eirika"
                     && sayRunner.Aside.Count == 2 && sayRunner.Aside[1].text == "Again.",
                 "speak stays modal while say lands ambient, order preserved");
+        }
+
+        private static void EventVarsChecks()
+        {
+            var trigger = new Dictionary<string, object?>
+            {
+                ["unit"] = new Dictionary<string, object?> { ["nid"] = "Eirika" },
+                ["turn"] = 5L,
+            };
+            var state = new Dictionary<string, object?>
+            {
+                ["opened_cache"] = true,
+                ["turn"] = 9L,
+            };
+            var merged = EventVars.WithStateVars(trigger, state);
+            Check(SimpleConditionEvaluator.Evaluate("opened_cache == true", merged), "state flag visible");
+            Check(SimpleConditionEvaluator.Evaluate("turn == 5", merged), "trigger wins on collision");
+            Check(!SimpleConditionEvaluator.Evaluate("turn == 9", merged), "state loses on collision");
+            Check(SimpleConditionEvaluator.Evaluate("unit.nid == 'Eirika'", merged), "nested trigger dict survives");
+            Check(SimpleConditionEvaluator.Evaluate("cache_done != true", merged), "unset flag null-safe for !=");
+            Check(!SimpleConditionEvaluator.Evaluate("opened_cache != true", merged), "set flag null-safe against !=");
+            Check(!trigger.ContainsKey("opened_cache") && !state.ContainsKey("unit"), "merge copies, inputs untouched");
+            var empty2 = EventVars.WithStateVars(new Dictionary<string, object?>(), new Dictionary<string, object?>());
+            Check(empty2.Count == 0, "empty merge is empty");
+            var collideT = new Dictionary<string, object?> { ["flag"] = true, ["who"] = "a", ["Turn"] = "s", ["unit"] = new Dictionary<string, object?> { ["nid"] = "Eirika" }, ["turn"] = 5L };
+            var collideS = new Dictionary<string, object?> { ["flag"] = false, ["who"] = "b", ["Turn"] = "t", ["unit"] = true, ["turn"] = 9L };
+            var cm = EventVars.WithStateVars(collideT, collideS);
+            Check(SimpleConditionEvaluator.Evaluate("flag == true", cm), "bool collision resolves to trigger");
+            Check(SimpleConditionEvaluator.Evaluate("who == 'a'", cm), "string collision resolves to trigger");
+            Check(SimpleConditionEvaluator.Evaluate("Turn == 's' && turn == 5", cm), "case variants coexist");
+            Check(SimpleConditionEvaluator.Evaluate("unit.nid == 'Eirika'", cm), "nested trigger dict beats state scalar");
+
+            var gated = new GameEvent("cache-loot", EventTrigger.LevelStart, "opened_cache == true");
+            gated.AddCommand("say;Narrator;Found it.");
+            var shut = new GameEvent("shut", EventTrigger.LevelStart, "opened_cache == true");
+            shut.AddCommand("say;Narrator;Shut.");
+            var evs = new List<GameEvent> { shut, gated };
+            var empty = new Dictionary<string, object?>();
+            var r1 = EventDispatcher.Dispatch(EventTrigger.LevelStart, empty, empty, evs, new RecordingExecutor());
+            Check(r1.Count == 2 && !r1[0].Ran && !r1[1].Ran, "gated events stay shut without the flag");
+            var state2 = new Dictionary<string, object?> { ["opened_cache"] = true };
+            var exec = new RecordingExecutor();
+            var r2 = EventDispatcher.Dispatch(EventTrigger.LevelStart, empty, state2, evs, exec);
+            Check(r2.Count == 2 && r2[0].Ran && r2[1].Ran && exec.Ran.Count == 2, "flag opens gated events in name order");
+
+            bool threwT = false, threwS = false;
+            try { EventVars.WithStateVars(null!, empty); } catch (ArgumentNullException) { threwT = true; }
+            try { EventVars.WithStateVars(empty, null!); } catch (ArgumentNullException) { threwS = true; }
+            Check(threwT && threwS, "null inputs rejected");
         }
 
         private static void RngStreamChecks()

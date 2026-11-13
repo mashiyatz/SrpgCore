@@ -26,15 +26,16 @@ namespace SrpgCore.Events
     }
 
     /// <summary>
-    /// Runs one event: checks the condition against trigger vars, validates every command
-    /// up front (fail before side effects), then dispatches in order. Trigger dispatch
-    /// across many events belongs to the future TurnManager, not here.
+    /// Runs one event: checks the condition against trigger vars merged over chapter
+    /// state vars (see EventVars), validates every command up front (fail before side
+    /// effects), then dispatches in order. Trigger dispatch across many events belongs
+    /// to the future TurnManager, not here.
     /// </summary>
     public static class EventRunner
     {
         /// <summary>Runs one event when its condition passes; validates all commands before any side effect.</summary>
         /// <param name="gameEvent">The event definition (trigger already matched by the caller).</param>
-        /// <param name="vars">Trigger variables visible to the condition language.</param>
+        /// <param name="vars">Trigger vars merged over chapter state vars (see EventVars).</param>
         /// <param name="executor">Host that executes each validated command.</param>
         /// <returns>Whether the event ran, commands executed, and any validation error.</returns>
         public static EventRunResult Run(

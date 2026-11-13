@@ -15,9 +15,9 @@ namespace SrpgCore.Events
     {
         private static readonly string[] Ops = { "==", "!=", ">=", "<=", ">", "<" };
 
-        /// <summary>Evaluates a condition against trigger vars where empty always passes and clauses join with AND.</summary>
+        /// <summary>Evaluates a condition against trigger vars merged over chapter state vars (see EventVars) where empty always passes and clauses join with AND.</summary>
         /// <param name="condition">The clauses joined by AND with each shaped path op literal.</param>
-        /// <param name="vars">The nested trigger variables that dotted paths resolve against.</param>
+        /// <param name="vars">The nested variables that dotted paths resolve against.</param>
         /// <returns>True when every clause passes or the condition is empty.</returns>
         public static bool Evaluate(string condition, IReadOnlyDictionary<string, object?> vars)
         {

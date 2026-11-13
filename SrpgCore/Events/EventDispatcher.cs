@@ -40,5 +40,25 @@ namespace SrpgCore.Events
             }
             return results;
         }
+
+        /// <summary>Runs every event subscribed to a trigger with chapter state vars visible to conditions.</summary>
+        /// <param name="trigger">The raised trigger selecting which events run.</param>
+        /// <param name="triggerVars">Per-dispatch trigger variables (unit/region/turn/...).</param>
+        /// <param name="stateVars">Chapter state vars (set_flag flags, opened_/visited_ latches).</param>
+        /// <param name="events">The candidate events of which only trigger matches run.</param>
+        /// <param name="executor">Host that executes each validated command.</param>
+        /// <returns>One result per attempted event in dispatch order.</returns>
+        /// <remarks>State vars are snapshotted once per dispatch: flags set by events
+        /// in this batch are visible only on the next dispatch. Both dicts must be
+        /// non-null even when no condition reads them (stricter than the 4-arg overload).</remarks>
+        public static List<EventRunResult> Dispatch(
+            EventTrigger trigger,
+            IReadOnlyDictionary<string, object?> triggerVars,
+            IReadOnlyDictionary<string, object?> stateVars,
+            IEnumerable<GameEvent> events,
+            IEventExecutor executor)
+        {
+            return Dispatch(trigger, EventVars.WithStateVars(triggerVars, stateVars), events, executor);
+        }
     }
 }

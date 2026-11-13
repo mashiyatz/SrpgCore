@@ -5,7 +5,8 @@ namespace SrpgCore.Events
 {
     /// <summary>
     /// Scripted event: unique name + trigger + condition expression + command list.
-    /// Conditions evaluate against trigger variables (see SimpleConditionEvaluator).
+    /// Conditions evaluate against trigger vars merged over chapter state vars
+    /// (trigger wins; see EventVars.WithStateVars).
     /// </summary>
     public sealed class GameEvent
     {
