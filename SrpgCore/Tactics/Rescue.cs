@@ -64,6 +64,11 @@ namespace SrpgCore.Tactics
                 throw new InvalidOperationException($"'{carrier.Unit.Nid}' is not carrying '{passenger.Nid}'.");
             if (carrier.Position.ManhattanDistance(tile) != 1) throw new InvalidOperationException("Drop must be adjacent.");
             if (!field.Board.InBounds(tile)) throw new ArgumentOutOfRangeException(nameof(tile));
+            if (!field.Board.GetTerrain(tile).IsPassable(passenger.MovementGroup))
+                throw new InvalidOperationException("Drop tile is impassable for the passenger.");
+            int dh = field.Board.GetHeight(tile) - field.Board.GetHeight(carrier.Position);
+            if (dh > 0 && dh > passenger.Jump && !Grid.RangeFinder.IsFlierGroup(passenger.MovementGroup))
+                throw new InvalidOperationException("Drop tile is too high for the passenger.");
             foreach (PlacedUnit p in field.Placed)
                 if (p.Position.Equals(tile)) throw new InvalidOperationException("Drop tile occupied.");
             carrier.Unit.CarryingNid = "";

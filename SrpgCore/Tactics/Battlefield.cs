@@ -118,7 +118,7 @@ namespace SrpgCore.Tactics
         /// <returns>Landable tiles excluding ally-occupied tiles except the origin.</returns>
         public HashSet<GridPoint> Reachable(PlacedUnit unit, string movementGroup, int movePoints)
         {
-            var remaining = RangeFinder.ComputeReachable(Board, unit.Position, movePoints, movementGroup, BlockingTiles(unit));
+            var remaining = RangeFinder.ComputeReachable(Board, unit.Position, movePoints, movementGroup, BlockingTiles(unit), unit.Unit.Jump);
             var allies = AllyTiles(unit);
             var tiles = new HashSet<GridPoint>();
             foreach (GridPoint p in remaining.Keys)
@@ -133,6 +133,6 @@ namespace SrpgCore.Tactics
         /// <param name="movePoints">Movement budget for this turn.</param>
         /// <returns>Every reachable tile with the movement left after arriving.</returns>
         public Dictionary<GridPoint, int> ReachableWithRemaining(PlacedUnit unit, string movementGroup, int movePoints) =>
-            RangeFinder.ComputeReachable(Board, unit.Position, movePoints, movementGroup, BlockingTiles(unit));
+            RangeFinder.ComputeReachable(Board, unit.Position, movePoints, movementGroup, BlockingTiles(unit), unit.Unit.Jump);
     }
 }

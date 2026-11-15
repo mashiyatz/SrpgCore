@@ -24,10 +24,26 @@ namespace SrpgCore.Tactics
             string movementGroup, int movePoints, int minRange, int maxRange)
         {
             var threat = new HashSet<GridPoint>();
-            threat.UnionWith(RangeFinder.AttackTiles(field.Board, enemy.Position, minRange, maxRange));
+            UnionRing(field, threat, enemy.Position, minRange, maxRange);
             foreach (GridPoint tile in field.Reachable(enemy, movementGroup, movePoints))
-                threat.UnionWith(RangeFinder.AttackTiles(field.Board, tile, minRange, maxRange));
+                UnionRing(field, threat, tile, minRange, maxRange);
             return threat;
+        }
+
+        // Melee (maxRange 1) cannot cross more than 2 height levels; ranged keeps the Manhattan ring.
+        private static void UnionRing(Battlefield field, HashSet<GridPoint> threat, GridPoint from, int minRange, int maxRange)
+        {
+            foreach (GridPoint t in RangeFinder.AttackTiles(field.Board, from, minRange, maxRange))
+            {
+                if (maxRange <= 1)
+                {
+                    int dh;
+                    try { dh = field.Board.GetHeight(from) - field.Board.GetHeight(t); }
+                    catch { dh = 0; }
+                    if (Math.Abs(dh) > 2) continue;
+                }
+                threat.Add(t);
+            }
         }
 
         /// <summary>Resolves a unit's movement group, move allowance, and weapon ranges.</summary>

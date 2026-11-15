@@ -169,6 +169,9 @@ namespace SrpgCore.Tactics
                 {
                     int dist = tile.ManhattanDistance(foe.Position);
                     if (!entry.Weapon.InRange(dist)) continue;
+                    int heightDiff = 0;
+                    try { heightDiff = field.Board.GetHeight(tile) - field.Board.GetHeight(foe.Position); } catch { heightDiff = 0; }
+                    if (entry.Weapon.MaxRange <= 1 && Math.Abs(heightDiff) > 2) continue;
 
                     Weapon? foeWeapon = defenderWeaponOf != null
                         ? defenderWeaponOf(foe, dist)
@@ -186,14 +189,14 @@ namespace SrpgCore.Tactics
                     CombatForecast fc = CombatResolver.Forecast(
                         self.Unit, entry.Weapon, foe.Unit, foeWeapon,
                         atkT.avoid, atkT.defense, defT.avoid, defT.defense, rules,
-                        self.Unit.Skills, foe.Unit.Skills, selfHit, foeAvoid);
+                        self.Unit.Skills, foe.Unit.Skills, selfHit, foeAvoid, null, null, heightDiff);
                     double score = Score(fc, foe, aiRules);
                     if (counterWeight > 0 && foeWeapon != null && foe.Unit.IsAlive)
                     {
                         CombatForecast counter = CombatResolver.Forecast(
                             foe.Unit, foeWeapon, self.Unit, entry.Weapon,
                             defT.avoid, defT.defense, atkT.avoid, atkT.defense, rules,
-                            foe.Unit.Skills, self.Unit.Skills, foeHit, selfAvoid);
+                            foe.Unit.Skills, self.Unit.Skills, foeHit, selfAvoid, null, null, -heightDiff);
                         double risk = counter.Damage * (counter.Hit / 100.0)
                             + counter.Damage * 2.0 * (counter.Crit / 100.0);
                         score -= counterWeight * risk;
@@ -329,7 +332,15 @@ namespace SrpgCore.Tactics
                 foreach (InventoryEntry e in foe.Unit.Inventory)
                 {
                     if (e.IsBroken || e.Weapon.IsStaff) continue;
-                    if (e.Weapon.InRange(tile.ManhattanDistance(foe.Position))) { threat++; break; }
+                    if (!e.Weapon.InRange(tile.ManhattanDistance(foe.Position))) continue;
+                    if (e.Weapon.MaxRange <= 1)
+                    {
+                        int dh;
+                        try { dh = field.Board.GetHeight(tile) - field.Board.GetHeight(foe.Position); }
+                        catch { dh = 0; }
+                        if (Math.Abs(dh) > 2) continue;
+                    }
+                    threat++; break;
                 }
             }
             (int avoid, int defense) t = terrainOf != null ? terrainOf(self, tile) : (0, 0);

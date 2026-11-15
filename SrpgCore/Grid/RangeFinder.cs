@@ -3,9 +3,23 @@ using System.Collections.Generic;
 
 namespace SrpgCore.Grid
 {
-    /// <summary>Dijkstra movement-range, A-star pathfinding, and shared Manhattan attack-ring logic (ComputeReachable/FindPath/AttackTiles). All pure and deterministic.</summary>
+    /// <summary>Dijkstra movement-range, A-star pathfinding, and shared Manhattan attack-ring logic (ComputeReachable/FindPath/AttackTiles). All pure and deterministic. Height-aware: uphill steps cost +1 per level and steps with rise above Jump are impassable; fliers ignore heights.</summary>
     public static class RangeFinder
     {
+        /// <summary>True when the group ignores heights (flier).</summary>
+        public static bool IsFlierGroup(string movementGroup) =>
+            string.Equals(movementGroup, MovementGroups.Flier, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>Step cost including climb, or null when the step is illegal (impassable terrain or rise above jump). Fliers pay flat terrain cost.</summary>
+        public static int? StepCost(Board board, GridPoint from, GridPoint to, string movementGroup, int jump)
+        {
+            TerrainType terrain = board.GetTerrain(to);
+            if (!terrain.IsPassable(movementGroup)) return null;
+            if (IsFlierGroup(movementGroup)) return terrain.MoveCost(movementGroup);
+            int dh = board.GetHeight(to) - board.GetHeight(from);
+            if (dh > 0 && dh > jump) return null;
+            return terrain.MoveCost(movementGroup) + Math.Max(0, dh);
+        }
         private static readonly GridPoint[] Neighbors =
         {
             new GridPoint(1, 0), new GridPoint(-1, 0),
@@ -18,14 +32,16 @@ namespace SrpgCore.Grid
         /// <param name="movePoints">The movement budget spent on tile entry costs.</param>
         /// <param name="moveType">The move type mapped to a movement group.</param>
         /// <param name="blocked">Tiles to exclude as occupied, or null for none.</param>
+        /// <param name="jump">Max uphill height gain per step (default free-climbs: pass a unit Jump on height boards).</param>
         /// <returns>Map of reachable tile to movement points remaining on arrival.</returns>
         public static Dictionary<GridPoint, int> ComputeReachable(
             Board board,
             GridPoint origin,
             int movePoints,
             MoveType moveType,
-            ISet<GridPoint>? blocked = null) =>
-            ComputeReachable(board, origin, movePoints, MovementGroups.For(moveType), blocked);
+            ISet<GridPoint>? blocked = null,
+            int jump = 99) =>
+            ComputeReachable(board, origin, movePoints, MovementGroups.For(moveType), blocked, jump);
 
         /// <summary>Computes reachable tiles via Dijkstra over tile entry costs.</summary>
         /// <param name="board">The board holding the terrain layout.</param>
@@ -33,13 +49,15 @@ namespace SrpgCore.Grid
         /// <param name="movePoints">The movement budget spent on tile entry costs.</param>
         /// <param name="movementGroup">The movement group name used for terrain costs.</param>
         /// <param name="blocked">Tiles to exclude as occupied, or null for none.</param>
+        /// <param name="jump">Max uphill height gain per step.</param>
         /// <returns>Map of reachable tile to movement points remaining on arrival.</returns>
         public static Dictionary<GridPoint, int> ComputeReachable(
             Board board,
             GridPoint origin,
             int movePoints,
             string movementGroup,
-            ISet<GridPoint>? blocked = null)
+            ISet<GridPoint>? blocked = null,
+            int jump = 99)
         {
             if (board == null) throw new ArgumentNullException(nameof(board));
             if (!board.InBounds(origin)) throw new ArgumentOutOfRangeException(nameof(origin));
@@ -62,11 +80,11 @@ namespace SrpgCore.Grid
                     if (!board.InBounds(next)) continue;
                     if (blocked != null && blocked.Contains(next)) continue;
 
-                    TerrainType terrain = board.GetTerrain(next);
-                    if (!terrain.IsPassable(movementGroup)) continue; // impassable
-                    int cost = terrain.MoveCost(movementGroup);
+                    int? cost = StepCost(board, current, next, movementGroup, jump);
+                    if (!cost.HasValue) continue;
+                    int costVal = cost.Value;
 
-                    int left = remaining[current] - cost;
+                    int left = remaining[current] - costVal;
                     if (left < 0) continue;
                     if (remaining.TryGetValue(next, out int prev) && prev >= left) continue;
 
@@ -85,6 +103,7 @@ namespace SrpgCore.Grid
         /// <param name="movePoints">The movement budget limiting total entry cost.</param>
         /// <param name="moveType">The move type mapped to a movement group.</param>
         /// <param name="blocked">Tiles to exclude except the destination, or null for none.</param>
+        /// <param name="jump">Max uphill height gain per step (default free-climbs: pass a unit Jump on height boards).</param>
         /// <returns>Cheapest path including both ends, or null when unreachable within budget.</returns>
         public static List<GridPoint>? FindPath(
             Board board,
@@ -92,8 +111,9 @@ namespace SrpgCore.Grid
             GridPoint to,
             int movePoints,
             MoveType moveType,
-            ISet<GridPoint>? blocked = null) =>
-            FindPath(board, from, to, movePoints, MovementGroups.For(moveType), blocked);
+            ISet<GridPoint>? blocked = null,
+            int jump = 99) =>
+            FindPath(board, from, to, movePoints, MovementGroups.For(moveType), blocked, jump);
 
         /// <summary>Finds the cheapest path within budget using A-star with a Manhattan heuristic.</summary>
         /// <param name="board">The board holding the terrain layout.</param>
@@ -102,6 +122,7 @@ namespace SrpgCore.Grid
         /// <param name="movePoints">The movement budget limiting total entry cost.</param>
         /// <param name="movementGroup">The movement group name used for terrain costs.</param>
         /// <param name="blocked">Tiles to exclude except the destination, or null for none.</param>
+        /// <param name="jump">Max uphill height gain per step.</param>
         /// <returns>Cheapest path including both ends, or null when unreachable within budget.</returns>
         public static List<GridPoint>? FindPath(
             Board board,
@@ -109,7 +130,8 @@ namespace SrpgCore.Grid
             GridPoint to,
             int movePoints,
             string movementGroup,
-            ISet<GridPoint>? blocked = null)
+            ISet<GridPoint>? blocked = null,
+            int jump = 99)
         {
             if (board == null) throw new ArgumentNullException(nameof(board));
             if (!board.InBounds(from)) throw new ArgumentOutOfRangeException(nameof(from));
@@ -140,9 +162,9 @@ namespace SrpgCore.Grid
                     if (!board.InBounds(next)) continue;
                     if (!next.Equals(to) && blocked != null && blocked.Contains(next)) continue;
 
-                    TerrainType terrain = board.GetTerrain(next);
-                    if (!terrain.IsPassable(movementGroup)) continue;
-                    int step = terrain.MoveCost(movementGroup);
+                    int? stepOpt = StepCost(board, current, next, movementGroup, jump);
+                    if (!stepOpt.HasValue) continue;
+                    int step = stepOpt.Value;
 
                     int g = costSoFar[current] + step;
                     if (g > movePoints) continue;

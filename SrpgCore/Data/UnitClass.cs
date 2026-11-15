@@ -14,6 +14,8 @@ namespace SrpgCore.Data
         public MoveType MoveType { get; }
         /// <summary>Base movement points adopted on promotion.</summary>
         public int Move { get; }
+        /// <summary>Climb allowance adopted on promotion.</summary>
+        public int Jump { get; }
         /// <summary>Promotion target class key, null when this class cannot promote.</summary>
         public string? PromotesTo { get; }
 
@@ -23,12 +25,13 @@ namespace SrpgCore.Data
         /// <param name="moveType">Movement family for terrain costs.</param>
         /// <param name="move">Base movement points.</param>
         /// <param name="promotesTo">Promotion target class key, null for no promotion.</param>
-        public UnitClass(string key, string name, MoveType moveType, int move, string? promotesTo = null)
+        public UnitClass(string key, string name, MoveType moveType, int move, string? promotesTo = null, int jump = 1)
         {
             Key = key ?? throw new ArgumentNullException(nameof(key));
             Name = name ?? throw new ArgumentNullException(nameof(name));
             MoveType = moveType;
             Move = move;
+            Jump = jump;
             PromotesTo = promotesTo;
         }
     }

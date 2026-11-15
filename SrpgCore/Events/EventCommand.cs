@@ -30,12 +30,28 @@ namespace SrpgCore.Events
         public static EventCommand Parse(string line)
         {
             if (line == null) throw new ArgumentNullException(nameof(line));
+            if (line.Length > EventLimits.MaxCommandLength)
+                throw new FormatException($"Event command too long ({line.Length} > {EventLimits.MaxCommandLength}).");
             string[] parts = line.Split(';');
             string verb = parts[0].Trim();
             if (verb.Length == 0) throw new FormatException("Event command is missing a verb.");
+            if (verb.Length > EventLimits.MaxVerbLength)
+                throw new FormatException($"Event verb too long ('{verb}').");
+            if (!IsValidVerbToken(verb))
+                throw new FormatException($"Bad event verb '{verb}' (want letters/digits/underscore).");
             var args = new string[parts.Length - 1];
             for (int i = 1; i < parts.Length; i++) args[i - 1] = parts[i].Trim();
             return new EventCommand(verb, args);
+        }
+
+        private static bool IsValidVerbToken(string verb)
+        {
+            if (verb.Length == 0) return false;
+            char first = verb[0];
+            if (!(char.IsLetter(first) || first == '_')) return false;
+            foreach (char c in verb)
+                if (!(char.IsLetterOrDigit(c) || c == '_')) return false;
+            return true;
         }
 
         /// <summary>Formats the command back to its semicolon separated source shape.</summary>
@@ -91,6 +107,11 @@ namespace SrpgCore.Events
                 ["sell"]          = (2, 2, "sell;unit_nid;weapon_key — sell carried entry for half price."),
                 ["torch"]         = (2, 2, "torch;unit_nid;amount — grant torch status for 3 turns and boost vision."),
                 ["set_terrain"]   = (2, 2, "set_terrain;x,y;terrainKey — change board terrain at tile."),
+                ["play_sound"]    = (1, 2, "play_sound;sfx[;volume] — presentation blip, no state."),
+                ["play_music"]    = (1, 2, "play_music;track[;loop] — presentation music, no state."),
+                ["stop_music"]    = (0, 0, "stop_music — stop presentation music, no state."),
+                ["show_effect"]   = (2, 3, "show_effect;effect;x,y[;ttl] — presentation flash, no state."),
+                ["banner"]        = (1, 3, "banner;text[;art][;sfx] — presentation banner, no state."),
             };
 
         /// <summary>Checks that the verb is known and the argument count fits its catalog arity.</summary>
@@ -108,6 +129,38 @@ namespace SrpgCore.Events
             {
                 error = $"'{command.Verb}' takes {spec.min}-{spec.max} args, got {command.Args.Length}.";
                 return false;
+            }
+            if (!TryValidateSemantics(command, out error))
+                return false;
+            error = null;
+            return true;
+        }
+
+        /// <summary>Maximum allowed wait duration in seconds (prevents hangs from adversarial or malformed content).</summary>
+        public const double MaxWaitSeconds = 600.0;
+
+        private static bool TryValidateSemantics(EventCommand command, out string? error)
+        {
+            if (command.Verb.Equals("wait", StringComparison.OrdinalIgnoreCase))
+            {
+                if (command.Args.Length < 1
+                    || !double.TryParse(command.Args[0], System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands,
+                        System.Globalization.CultureInfo.InvariantCulture, out double secs)
+                    || double.IsNaN(secs) || double.IsInfinity(secs))
+                {
+                    error = "'wait' requires a finite numeric seconds value.";
+                    return false;
+                }
+                if (secs < 0)
+                {
+                    error = "'wait' seconds must be >= 0.";
+                    return false;
+                }
+                if (secs > MaxWaitSeconds)
+                {
+                    error = $"'wait' seconds must be <= {MaxWaitSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)}.";
+                    return false;
+                }
             }
             error = null;
             return true;

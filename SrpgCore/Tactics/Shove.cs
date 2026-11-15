@@ -23,6 +23,8 @@ namespace SrpgCore.Tactics
             GridPoint dest = new GridPoint(targetPos.X + (targetPos.X - shoverPos.X), targetPos.Y + (targetPos.Y - shoverPos.Y));
             if (!field.Board.InBounds(dest)) return false;
             if (!field.Board.GetTerrain(dest).IsPassable(target.MovementGroup)) return false;
+            int dh = field.Board.GetHeight(dest) - field.Board.GetHeight(targetPos);
+            if (dh > 0 && dh > target.Jump && !RangeFinder.IsFlierGroup(target.MovementGroup)) return false;
             foreach (var p in field.Placed) if (p.Position.Equals(dest)) return false;
             return true;
         }

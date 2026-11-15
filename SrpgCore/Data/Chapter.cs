@@ -214,6 +214,8 @@ namespace SrpgCore.Data
         public string FormationRegion { get; set; } = "";
         /// <summary>Nid of the following chapter, empty when this chapter ends the chain.</summary>
         public string NextChapter { get; set; } = "";
+        /// <summary>Presentation music track (pack music name), empty for the pack default.</summary>
+        public string MusicTrack { get; set; } = "";
 
         /// <summary>Reports authoring errors for editors to surface, empty when clean.</summary>
         /// <returns>One message per off-board tile, duplicate name, bad verb, or dangling tag.</returns>
@@ -227,6 +229,15 @@ namespace SrpgCore.Data
                 errors.Add("Chapter has no board.");
                 return errors;
             }
+            if (Board.HasHeights() && !IsIso)
+                errors.Add("HEIGHTS requires view: iso.");
+            for (int y = 0; y < Board.Height; y++)
+                for (int x = 0; x < Board.Width; x++)
+                {
+                    int h = Board.GetHeight(new GridPoint(x, y));
+                    if (h < 0 || h > Board.MaxHeight)
+                    { errors.Add($"Height {h} at ({x},{y}) is out of range 0-{Board.MaxHeight}."); break; }
+                }
 
             var nids = new HashSet<string>();
             int turnOnePlayers = 0;

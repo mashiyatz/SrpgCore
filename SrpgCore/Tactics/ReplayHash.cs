@@ -7,7 +7,7 @@ namespace SrpgCore.Tactics
     /// <summary>Deterministic hash of chapter runtime for replay verification.</summary>
     public static class ReplayHash
     {
-        /// <summary>Computes a deterministic hash of placements, HP, vars, RNG states, and skill catalog.</summary>
+        /// <summary>Computes a deterministic hash of placements, HP, jump, heights, vars, RNG states, and skill catalog.</summary>
         /// <param name="state">Chapter runtime to hash.</param>
         /// <returns>Hash string.</returns>
         public static string Compute(ChapterState state)
@@ -43,7 +43,11 @@ namespace SrpgCore.Tactics
                     h = h * 31 + p.Position.X;
                     h = h * 31 + p.Position.Y;
                     h = h * 31 + p.Unit.CurrentHP;
+                    h = h * 31 + p.Unit.Jump;
                 }
+                for (int y = 0; y < state.Field.Board.Height; y++)
+                    for (int x = 0; x < state.Field.Board.Width; x++)
+                        h = h * 31 + state.Field.Board.GetHeight(new Grid.GridPoint(x, y));
                 var varKeys = new List<string>(state.Vars.Keys);
                 varKeys.Sort(StringComparer.Ordinal);
                 foreach (string key in varKeys)

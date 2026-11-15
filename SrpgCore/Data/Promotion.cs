@@ -67,6 +67,7 @@ namespace SrpgCore.Data
             unit.ClassKey = next.Key;
             unit.MovementGroup = MovementGroups.For(next.MoveType);
             unit.MovePoints = next.Move;
+            unit.Jump = next.Jump;
             if (gains != null)
             {
                 unit.Stats.MaxHP += gains.MaxHP;

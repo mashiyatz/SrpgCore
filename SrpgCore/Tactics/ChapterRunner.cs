@@ -77,6 +77,11 @@ namespace SrpgCore.Tactics
                 case "add_portrait":
                 case "remove_portrait":
                 case "wait":
+                case "play_sound":
+                case "play_music":
+                case "stop_music":
+                case "show_effect":
+                case "banner":
                     break; // presentation-only headlessly
                 case "move_unit":
                     {
@@ -86,6 +91,9 @@ namespace SrpgCore.Tactics
                             throw new InvalidOperationException($"Move destination {dest} is out of bounds.");
                         if (!State.Field.Board.GetTerrain(dest).IsPassable(mover.Unit.MovementGroup))
                             throw new InvalidOperationException($"Move destination {dest} is impassable for '{mover.Unit.MovementGroup}'.");
+                        // Scripted teleport: like warp, event moves ignore climb (authors
+                        // stage cutscenes, not walks — hosts animate via FindPath with a
+                        // straight-line fallback when no legal path exists).
                         mover.Position = dest;
                         break;
                     }

@@ -26,6 +26,8 @@ namespace SrpgCore.Tactics
         public int CurrentHP;
         /// <summary>Base movement allowance.</summary>
         public int MovePoints;
+        /// <summary>Climb allowance per step.</summary>
+        public int Jump = 1;
         /// <summary>Movement group key for terrain costs.</summary>
         public string MovementGroup = "";
         /// <summary>Sight radius in Manhattan tiles.</summary>
@@ -135,6 +137,8 @@ namespace SrpgCore.Tactics
         public int BoardHeight;
         /// <summary>Terrain keys in row major order.</summary>
         public List<string> TerrainKeys = new List<string>();
+        /// <summary>Heights in row major order (missing on old saves reads as all zero).</summary>
+        public List<int> Heights = new List<int>();
     }
 
     /// <summary>
@@ -177,7 +181,10 @@ namespace SrpgCore.Tactics
             snap.BoardHeight = state.Field.Board.Height;
             for (int y = 0; y < state.Field.Board.Height; y++)
                 for (int x = 0; x < state.Field.Board.Width; x++)
+                {
                     snap.TerrainKeys.Add(state.Field.Board.GetTerrainKey(new GridPoint(x, y)));
+                    snap.Heights.Add(state.Field.Board.GetHeight(new GridPoint(x, y)));
+                }
             foreach (PlacedUnit p in state.Field.Placed)
             {
                 var u = new UnitSnapshot
@@ -191,6 +198,7 @@ namespace SrpgCore.Tactics
                     Stats = p.Unit.Stats.Clone(),
                     CurrentHP = p.Unit.CurrentHP,
                     MovePoints = p.Unit.MovePoints,
+                    Jump = p.Unit.Jump,
                     MovementGroup = p.Unit.MovementGroup,
                     Vision = p.Unit.Vision,
                     CarryingNid = p.Unit.CarryingNid,
@@ -221,6 +229,7 @@ namespace SrpgCore.Tactics
                     Stats = cu.Stats.Clone(),
                     CurrentHP = cu.CurrentHP,
                     MovePoints = cu.MovePoints,
+                    Jump = cu.Jump,
                     MovementGroup = cu.MovementGroup,
                     Vision = cu.Vision,
                     CarryingNid = cu.CarryingNid,
@@ -267,6 +276,7 @@ namespace SrpgCore.Tactics
                     Experience = ps.Unit.Experience,
                     CurrentHP = ps.Unit.CurrentHP,
                     MovePoints = ps.Unit.MovePoints,
+                    Jump = ps.Unit.Jump,
                     MovementGroup = ps.Unit.MovementGroup,
                     Vision = ps.Unit.Vision,
                     CarryingNid = ps.Unit.CarryingNid,
@@ -294,6 +304,7 @@ namespace SrpgCore.Tactics
                     Experience = us.Experience,
                     CurrentHP = us.CurrentHP,
                     MovePoints = us.MovePoints,
+                    Jump = us.Jump,
                     MovementGroup = us.MovementGroup,
                     Vision = us.Vision,
                     CarryingNid = us.CarryingNid,
@@ -336,6 +347,14 @@ namespace SrpgCore.Tactics
                 for (int y = 0; y < snap.BoardHeight; y++)
                     for (int x = 0; x < snap.BoardWidth; x++)
                         state.Field.Board.SetTerrain(new GridPoint(x, y), snap.TerrainKeys[y * snap.BoardWidth + x]);
+                if (snap.Heights.Count > 0)
+                {
+                    if (snap.Heights.Count != snap.BoardWidth * snap.BoardHeight)
+                        throw new InvalidOperationException("Save height grid size is corrupt.");
+                    for (int y = 0; y < snap.BoardHeight; y++)
+                        for (int x = 0; x < snap.BoardWidth; x++)
+                            state.Field.Board.SetHeight(new GridPoint(x, y), snap.Heights[y * snap.BoardWidth + x]);
+                }
             }
             state.SkillDefs.Clear();
             foreach (var ss in snap.SkillDefs) state.SkillDefs[ss.Id] = new SrpgCore.Combat.SkillDef(ss.Id) { Hook = (SrpgCore.Combat.SkillHook)ss.Hook, DamageBonus = ss.DamageBonus, HitBonus = ss.HitBonus, CritBonus = ss.CritBonus, DamageTakenPenalty = ss.DamageTakenPenalty, ProcChance = ss.ProcChance };

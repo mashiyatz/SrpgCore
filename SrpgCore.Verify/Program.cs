@@ -57,6 +57,8 @@ namespace SrpgCore.Verify
             TacticsAiChecks();
             Console.WriteLine("[conditions-edge]");
             ConditionEdgeChecks();
+            Console.WriteLine("[event-hardening]");
+            EventHardeningChecks();
             Console.WriteLine("[chapter]");
             ChapterChecks();
             Console.WriteLine("[format]");
@@ -89,6 +91,8 @@ namespace SrpgCore.Verify
             WarpTorchInventoryReaverFormationChecks();
             Console.WriteLine("[decomp-core]");
             DecompCoreChecks();
+            Console.WriteLine("[height]");
+            HeightChecks();
 
             Console.WriteLine($"-- {_passed} passed, {_failed} failed --");
             return _failed == 0 ? 0 : 1;
@@ -142,6 +146,89 @@ namespace SrpgCore.Verify
             var region = new Region("village-door", RegionKind.Event);
             region.Add(new GridPoint(3, 3));
             Check(region.Contains(new GridPoint(3, 3)) && !region.Contains(origin), "region membership");
+        }
+
+        private static void HeightChecks()
+        {
+            var board = OpenBoard(5, 5);
+            var origin = new GridPoint(2, 2);
+            board.SetHeight(new GridPoint(3, 2), 2);
+
+            var noClimb = RangeFinder.ComputeReachable(board, origin, 9, MovementGroups.Infantry, null, 1);
+            Check(!noClimb.ContainsKey(new GridPoint(3, 2)), "jump 1 cannot climb +2");
+            var climb = RangeFinder.ComputeReachable(board, origin, 9, MovementGroups.Infantry, null, 2);
+            Check(climb.TryGetValue(new GridPoint(3, 2), out int left) && left == 9 - (1 + 2), $"climb pays terrain+rise (left {left})");
+            var fly = RangeFinder.ComputeReachable(board, origin, 9, MovementGroups.Flier, null, 0);
+            Check(fly.TryGetValue(new GridPoint(3, 2), out int fleft) && fleft == 9 - 1, "flier ignores rise");
+
+            var down = OpenBoard(5, 5);
+            down.SetHeight(new GridPoint(2, 2), 2);
+            var drop = RangeFinder.ComputeReachable(down, new GridPoint(2, 2), 9, MovementGroups.Infantry, null, 1);
+            Check(drop.TryGetValue(new GridPoint(2, 3), out int dleft) && dleft == 9 - 1, "downhill is free");
+
+            var pathBlocked = RangeFinder.FindPath(board, origin, new GridPoint(3, 2), 9, MovementGroups.Infantry, null, 1);
+            Check(pathBlocked == null, "no jump-1 path up +2");
+            var pathOk = RangeFinder.FindPath(board, origin, new GridPoint(3, 2), 9, MovementGroups.Infantry, null, 2);
+            Check(pathOk != null && pathOk.Count == 2, "jump-2 path climbs");
+
+            var atk = KnightLike();
+            var def = BanditLike();
+            var sword = new Weapon("iron-sword", "Iron Sword", WeaponType.Sword, WeaponRank.E,
+                might: 5, hit: 90, crit: 0, weight: 5, minRange: 1, maxRange: 1, maxUses: 40);
+            var axe = new Weapon("iron-axe", "Iron Axe", WeaponType.Axe, WeaponRank.E,
+                might: 8, hit: 75, crit: 0, weight: 10, minRange: 1, maxRange: 1, maxUses: 40);
+            var flat = CombatResolver.Forecast(atk, sword, def, axe, 0, 0, 0, 0);
+            var high = CombatResolver.Forecast(FreshKnight(), sword, FreshBandit(), axe, 0, 0, 0, 0, null, null, null, 0, 0, null, null, 2);
+            Check(high.Hit == Math.Min(100, flat.Hit + 20), "height +2 gives +20 hit");
+            Check(high.Damage == flat.Damage + 2, "height +2 gives +2 dmg");
+            var weakSword = new Weapon("weak-sword", "Weak Sword", WeaponType.Sword, WeaponRank.E,
+                might: 5, hit: 40, crit: 0, weight: 5, minRange: 1, maxRange: 1, maxUses: 40);
+            var flatWeak = CombatResolver.Forecast(FreshKnight(), weakSword, FreshBandit(), axe, 0, 0, 0, 0);
+            var lowWeak = CombatResolver.Forecast(FreshKnight(), weakSword, FreshBandit(), axe, 0, 0, 0, 0, null, null, null, 0, 0, null, null, -1);
+            Check(lowWeak.Hit == flatWeak.Hit - 10, $"attacking up -1 costs 10 hit ({flatWeak.Hit}->{lowWeak.Hit})");
+            var lowDmg = CombatResolver.Forecast(FreshKnight(), sword, FreshBandit(), axe, 0, 0, 0, 0, null, null, null, 0, 0, null, null, -1);
+            Check(lowDmg.Damage == flat.Damage, "attacking up costs no damage");
+
+            var field = new Battlefield(OpenBoard(5, 5));
+            field.Board.SetHeight(new GridPoint(3, 2), 2);
+            var pusher = field.Deploy(FreshKnight(), new GridPoint(1, 2));
+            var victim = field.Deploy(FreshBandit(), new GridPoint(2, 2));
+            victim.Unit.Jump = 1;
+            Check(!Shove.CanShove(pusher.Unit, victim.Unit, pusher.Position, victim.Position, field), "shove up +2 blocked for jump 1");
+            victim.Unit.Jump = 2;
+            Check(Shove.CanShove(pusher.Unit, victim.Unit, pusher.Position, victim.Position, field), "shove up +2 allowed for jump 2");
+
+            var htext = "# H: T\n## META\nformat: 1\nview: iso\nobjective: o\nvictory: rout\ndefeat: all_dead\n## LEGEND\n.: plain\n## MAP\n..\n..\n## HEIGHTS\n01\n10\n## ARMORY\niron-sword Iron_Sword sword E 5 90 0 5 1-1 40\n## UNITS\n0,0 h1 player mercenary 1 20 5 6 7 3 4 1 8 items:iron-sword jump:2\n";
+            var hres = MarkdownChapterLoader.Load(htext, "h.md");
+            Check(hres.Ok && hres.Chapter != null && hres.Chapter.Board!.GetHeight(new GridPoint(1, 0)) == 1, "HEIGHTS parses with jump token");
+            var ftext = htext.Replace("view: iso", "view: flat");
+            var fres = MarkdownChapterLoader.Load(ftext, "f.md");
+            Check(!fres.Ok, "HEIGHTS rejected on flat view");
+            var badjump = htext.Replace("jump:2", "jump:9");
+            Check(!MarkdownChapterLoader.Load(badjump, "j.md").Ok, "jump above max rejected");
+
+            var flat3 = OpenBoard(5, 5);
+            flat3.SetHeight(new GridPoint(2, 2), 3);
+            var cliff = new Battlefield(flat3);
+            var low1 = cliff.Deploy(FreshKnight(), new GridPoint(2, 1));
+            var high1 = cliff.Deploy(FreshBandit(), new GridPoint(2, 2));
+            var meleeOnly = ThreatCalculator.ThreatRange(cliff, high1, MovementGroups.Infantry, 0, 1, 1);
+            Check(!meleeOnly.Contains(new GridPoint(2, 1)), "melee threat blocked across 3 levels");
+            var bow = new Weapon("iron-bow", "Iron Bow", WeaponType.Bow, WeaponRank.E,
+                might: 6, hit: 85, crit: 0, weight: 6, minRange: 2, maxRange: 2, maxUses: 40);
+            high1.Unit.Inventory.Add(new InventoryEntry(bow));
+            var ranged = ThreatCalculator.ThreatRange(cliff, high1, MovementGroups.Infantry, 0, 2, 2);
+            Check(ranged.Contains(new GridPoint(2, 0)) || ranged.Contains(new GridPoint(0, 2)), "ranged threat crosses cliffs");
+
+            var tstate = ChapterState.StartNew(MarkdownChapterLoader.Load(
+                "# T: T\n## META\nformat: 1\nview: iso\nobjective: o\nvictory: rout\ndefeat: all_dead\n## LEGEND\n.: plain\n## MAP\n...\n...\n...\n## HEIGHTS\n000\n030\n000\n## ARMORY\niron-sword Iron_Sword sword E 5 90 0 5 1-1 40\n## UNITS\n0,0 m player mercenary 1 20 5 6 7 3 4 1 8 items:iron-sword\n",
+                "t.md").Chapter!, 1);
+            var trunner = new ChapterRunner(tstate);
+            trunner.Execute(EventCommand.Parse("move_unit;m;1,1"));
+            Check(tstate.Field.Placed[0].Position == new GridPoint(1, 1), "move_unit teleports onto cliffs");
+            string h1 = ReplayHash.Compute(tstate);
+            tstate.Field.Board.SetHeight(new GridPoint(0, 0), 3);
+            Check(ReplayHash.Compute(tstate) != h1, "replay hash covers heights");
         }
 
         private static void RngChecks()
@@ -284,6 +371,15 @@ namespace SrpgCore.Verify
                 "say validates");
             Check(!CommandCatalog.TryValidate(new EventCommand("say", new[] { "OnlyOne" }), out _),
                 "say wrong arity rejected");
+
+            Check(CommandCatalog.TryValidate(EventCommand.Parse("wait;0"), out _), "wait 0 validates");
+            Check(CommandCatalog.TryValidate(EventCommand.Parse("wait;1.5"), out _), "wait fractional validates");
+            Check(!CommandCatalog.TryValidate(EventCommand.Parse("wait;-1"), out _), "wait negative rejected");
+            Check(!CommandCatalog.TryValidate(EventCommand.Parse("wait;NaN"), out _), "wait NaN rejected");
+            Check(!CommandCatalog.TryValidate(EventCommand.Parse("wait;Infinity"), out _), "wait Infinity rejected");
+            Check(!CommandCatalog.TryValidate(EventCommand.Parse("wait;601"), out _), "wait over max rejected");
+            Check(!CommandCatalog.TryValidate(new EventCommand("wait", new[] { "1e309" }), out _), "wait overflow rejected");
+
             var sayState = ChapterState.StartNew(TestChapter(), 1);
             var sayRunner = new ChapterRunner(sayState);
             var sayEv = new GameEvent("mix", EventTrigger.LevelStart);
@@ -609,6 +705,111 @@ namespace SrpgCore.Verify
             Check(SimpleConditionEvaluator.Evaluate("name == 'a==b'", vars), "operator inside quotes ignored");
             Check(!SimpleConditionEvaluator.Evaluate("name == 'a!=b'", vars), "quoted mismatch still filters");
             Check(SimpleConditionEvaluator.Evaluate("turn>=5 && turn <= 5", vars), "compact operators parse");
+
+            var andVars = new Dictionary<string, object?> { ["name"] = "a && b", ["turn"] = 5L };
+            Check(SimpleConditionEvaluator.Evaluate("name == 'a && b'", andVars), "&& inside quotes is literal");
+            Check(SimpleConditionEvaluator.Evaluate("name == 'a && b' && turn == 5", andVars), "clause split ignores quoted &&");
+            bool badQuote = false;
+            try { SimpleConditionEvaluator.Evaluate("name == 'unterminated", vars); }
+            catch (FormatException) { badQuote = true; }
+            Check(badQuote, "unterminated quote rejected");
+
+            // Adversarial splits: stray single &, empty clauses, missing operator.
+            bool strayAmp = false;
+            try { SimpleConditionEvaluator.Evaluate("turn == 5 & turn == 5", vars); }
+            catch (FormatException) { strayAmp = true; }
+            Check(strayAmp, "single & rejected");
+            bool emptyLead = false;
+            try { SimpleConditionEvaluator.Evaluate("&& turn == 5", vars); }
+            catch (FormatException) { emptyLead = true; }
+            Check(emptyLead, "leading && rejected");
+            bool emptyTrail = false;
+            try { SimpleConditionEvaluator.Evaluate("turn == 5 &&", vars); }
+            catch (FormatException) { emptyTrail = true; }
+            Check(emptyTrail, "trailing && rejected");
+            bool noOp = false;
+            try { SimpleConditionEvaluator.Evaluate("turn 5", vars); }
+            catch (FormatException) { noOp = true; }
+            Check(noOp, "missing operator rejected");
+            bool emptySide = false;
+            try { SimpleConditionEvaluator.Evaluate("== 5", vars); }
+            catch (FormatException) { emptySide = true; }
+            Check(emptySide, "empty path rejected");
+            bool overlong = false;
+            try { SimpleConditionEvaluator.Evaluate(new string('x', EventLimits.MaxConditionLength + 1), vars); }
+            catch (FormatException) { overlong = true; }
+            Check(overlong, "overlong condition rejected");
+            bool manyClauses = false;
+            try
+            {
+                var many = new System.Text.StringBuilder();
+                for (int i = 0; i < EventLimits.MaxConditionClauses + 1; i++)
+                {
+                    if (i > 0) many.Append(" && ");
+                    many.Append("turn >= 0");
+                }
+                SimpleConditionEvaluator.Evaluate(many.ToString(), vars);
+            }
+            catch (FormatException) { manyClauses = true; }
+            Check(manyClauses, "too many clauses rejected");
+        }
+
+        private static void EventHardeningChecks()
+        {
+            // Verb token shape + command length caps.
+            bool badVerb = false;
+            try { EventCommand.Parse("bad verb;1"); }
+            catch (FormatException) { badVerb = true; }
+            Check(badVerb, "verb with space rejected");
+            bool longCmd = false;
+            try { EventCommand.Parse("say;" + new string('x', EventLimits.MaxCommandLength)); }
+            catch (FormatException) { longCmd = true; }
+            Check(longCmd, "overlong command rejected");
+
+            // Orchestrator: ordering, staging, fail-fast, policy.
+            var low = new GameEvent("a-low", EventTrigger.LevelStart);
+            low.AddCommand("say;Narrator;Low.");
+            var high = new GameEvent("b-high", EventTrigger.LevelStart) { Priority = 10 };
+            high.AddCommand("speak;Narrator;High.");
+            var plans = EventOrchestrator.PlanDispatch(EventTrigger.LevelStart,
+                new Dictionary<string, object?>(), new[] { low, high });
+            Check(plans.Count == 2 && plans[0].Event.Name == "b-high" && plans[1].Event.Name == "a-low",
+                "orchestrator sorts priority then name");
+            Check(plans[0].Passes && plans[0].NeedsStaging && !plans[1].NeedsStaging,
+                "orchestrator marks staged vs immediate");
+
+            var bad = new GameEvent("bad", EventTrigger.LevelStart);
+            bad.AddCommand("frobnicate;now");
+            bad.Priority = 10;
+            var after = new GameEvent("after", EventTrigger.LevelStart);
+            after.AddCommand("say;Narrator;After.");
+            var failPlans = EventOrchestrator.PlanDispatch(EventTrigger.LevelStart,
+                new Dictionary<string, object?>(), new[] { bad, after });
+            Check(failPlans.Count == 1 && failPlans[0].Error != null && failPlans[0].FailingCommandIndex == 0,
+                "orchestrator fail-fast with command index");
+
+            var win = new GameEvent("win", EventTrigger.LevelStart);
+            win.AddCommand("win");
+            var trusted = EventOrchestrator.PlanDispatch(EventTrigger.LevelStart,
+                new Dictionary<string, object?>(), new[] { win }, EventTrust.Trusted);
+            Check(trusted.Count == 1 && trusted[0].Error == null, "trusted allows win");
+            var restricted = EventOrchestrator.PlanDispatch(EventTrigger.LevelStart,
+                new Dictionary<string, object?>(), new[] { win }, EventTrust.Restricted);
+            Check(restricted.Count == 1 && restricted[0].Error != null, "restricted blocks win");
+            Check(EventPolicy.IsHighImpact("win") && !EventPolicy.IsHighImpact("speak"),
+                "policy classifies impact");
+
+            // Loader bounds: semicolon in dialogue, overlong command.
+            string baseMd = "# T: T\n## META\nformat: 1\nobjective: o\nvictory: rout\ndefeat: all_dead\n## LEGEND\n.: plain\n## MAP\n..\n..\n## ARMORY\niron-sword Iron_Sword sword E 5 90 0 5 1-1 40\n## UNITS\n0,0 h player mercenary 1 20 5 6 7 3 4 1 8 items:iron-sword\n## EVENTS\n### intro on start\n";
+            var semiRes = MarkdownChapterLoader.Load(baseMd + "- Narrator: a;b\n", "semi.md");
+            Check(!semiRes.Ok, "dialogue semicolon rejected at load");
+            var longRes = MarkdownChapterLoader.Load(baseMd + "say;Narrator;" + new string('x', EventLimits.MaxCommandLength) + "\n", "long.md");
+            Check(!longRes.Ok, "overlong command rejected at load");
+
+            // Structured diagnostics carry context.
+            string diag = EventOrchestrator.FormatDiagnostic("intro", EventTrigger.LevelStart, 2, "speak", "dispatch", "boom");
+            Check(diag.Contains("intro") && diag.Contains("cmd2") && diag.Contains("speak") && diag.Contains("dispatch"),
+                "diagnostic carries event/cmd/verb/mode");
         }
 
         private static Chapter TestChapter()
@@ -954,6 +1155,8 @@ format: 1
                 "Bad region kind", "retired status region kind rejected");
             var isoRes = MarkdownChapterLoader.Load("# T\n## META\nformat: 1\nview: iso\n## LEGEND\n.: plain\n## MAP\n.\n", "iso.md");
             Check(isoRes.Ok && isoRes.Chapter != null && isoRes.Chapter.IsIso, "view iso parses");
+            var musRes = MarkdownChapterLoader.Load("# T\n## META\nformat: 1\nmusic: battle\n## LEGEND\n.: plain\n## MAP\n.\n", "mus.md");
+            Check(musRes.Ok && musRes.Chapter != null && musRes.Chapter.MusicTrack == "battle", "music meta parses");
         }
 
         private static void DurabilityEffectiveChecks()

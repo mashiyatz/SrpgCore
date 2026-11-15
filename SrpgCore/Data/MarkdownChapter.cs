@@ -55,7 +55,7 @@ namespace SrpgCore.Data
         /// <summary>Markdown format version this loader reads, required as format 1 in META.</summary>
         public const int CurrentFormat = 1;
 
-        private enum Section { None, Meta, Legend, Map, Armory, Templates, Units, Terrains, Regions, Events, Interactables }
+        private enum Section { None, Meta, Legend, Map, Heights, Armory, Templates, Units, Terrains, Regions, Events, Interactables }
 
         private sealed class RawUnit
         {
@@ -152,6 +152,7 @@ namespace SrpgCore.Data
             var legend = new Dictionary<char, string>();
             var legendLines = new Dictionary<char, int>();
             var mapRows = new List<(string row, int line)>();
+            var heightRows = new List<(string row, int line)>();
             var armory = new List<(string[] cells, int line)>();
             var templates = new List<RawUnit>();
             var units = new List<RawUnit>();
@@ -186,6 +187,7 @@ namespace SrpgCore.Data
                         case "META": section = Section.Meta; break;
                         case "LEGEND": section = Section.Legend; break;
                         case "MAP": section = Section.Map; break;
+                        case "HEIGHTS": section = Section.Heights; break;
                         case "ARMORY": section = Section.Armory; break;
                         case "TEMPLATES": section = Section.Templates; break;
                         case "UNITS": section = Section.Units; break;
@@ -236,6 +238,7 @@ namespace SrpgCore.Data
                             break;
                         }
                     case Section.Map: mapRows.Add((line, lineNo)); break;
+                    case Section.Heights: heightRows.Add((line, lineNo)); break;
                     case Section.Armory: armory.Add((cells, lineNo)); break;
                     case Section.Templates: templates.Add(new RawUnit { Cells = cells, Line = lineNo }); break;
                     case Section.Units: units.Add(new RawUnit { Cells = cells, Line = lineNo, HasPosition = true }); break;
@@ -261,7 +264,7 @@ namespace SrpgCore.Data
 
             // Board first (regions need bounds); on failure keep a 1x1 fallback so
             // the rest still parses and every error surfaces in one pass.
-            Board? board = BuildBoard(mapRows, legend, legendLines, terrainSet, Fail);
+            Board? board = BuildBoard(mapRows, heightRows, legend, legendLines, terrainSet, chapter, Fail);
             Board bounds = board ?? new Board(1, 1, "plain", terrainSet);
 
             // Armory first (units reference it, order-independent).
@@ -319,6 +322,7 @@ namespace SrpgCore.Data
                     case "victory": victories.Add(value); break;
                     case "defeat": defeats.Add(value); break;
                     case "next": chapter.NextChapter = value; break;
+                    case "music": chapter.MusicTrack = value; break;
                     case "maxdeploy":
                         if (!int.TryParse(value, out int md) || md < 0) fail(line, $"Bad maxDeploy '{value}'.");
                         else chapter.MaxDeploy = md;
@@ -419,8 +423,9 @@ namespace SrpgCore.Data
         }
 
         private static Board? BuildBoard(List<(string row, int line)> rows,
+            List<(string row, int line)> heights,
             Dictionary<char, string> legend, Dictionary<char, int> legendLines,
-            Dictionary<string, TerrainType> terrains, Action<int, string> fail)
+            Dictionary<string, TerrainType> terrains, Chapter chapter, Action<int, string> fail)
         {
             if (rows.Count == 0) { fail(0, "MAP has no rows."); return null; }
             int width = rows[0].row.Length;
@@ -436,12 +441,24 @@ namespace SrpgCore.Data
                     { fail(legendLines[g], $"LEGEND maps '{g}' to unknown terrain '{legend[g]}'."); clean = false; }
                 }
             }
+            if (heights.Count > 0 && !chapter.IsIso) { fail(heights[0].line, "HEIGHTS requires view: iso."); clean = false; }
+            if (heights.Count > 0 && heights.Count != rows.Count) { fail(heights[0].line, $"HEIGHTS has {heights.Count} rows, expected {rows.Count}."); clean = false; }
+            for (int i = 0; i < heights.Count && clean; i++)
+            {
+                if (heights[i].row.Length != width) { fail(heights[i].line, $"HEIGHTS row is {heights[i].row.Length} wide, expected {width}."); clean = false; }
+                foreach (char g in heights[i].row)
+                    if (g != '.' && (g < '0' || g > '3')) { fail(heights[i].line, $"Bad height glyph '{g}' (want 0-3 or .)."); clean = false; break; }
+            }
             if (!clean) return null;
             try
             {
                 var arr = new string[rows.Count];
                 for (int i = 0; i < rows.Count; i++) arr[i] = rows[i].row;
-                return Board.FromRows(arr, "plain", new Dictionary<char, string>(legend), terrains);
+                if (heights.Count == 0)
+                    return Board.FromRows(arr, "plain", new Dictionary<char, string>(legend), terrains);
+                var harr = new string[heights.Count];
+                for (int i = 0; i < heights.Count; i++) harr[i] = heights[i].row;
+                return Board.FromRows(arr, harr, "plain", new Dictionary<char, string>(legend), terrains);
             }
             catch (FormatException)
             {
@@ -539,7 +556,7 @@ namespace SrpgCore.Data
             int lvl = s[0];
             if (lvl < 1) { fail(raw.Line, "Level must be >= 1."); return; }
 
-            int move = 5, turn = 1, vision = 5;
+            int move = 5, turn = 1, vision = 5, jump = 1;
             string group = "", moveGroup = MovementGroups.Infantry, name = nid, spriteKey = "";
             var items = new List<string>();
             var skills = new List<string>();
@@ -558,6 +575,9 @@ namespace SrpgCore.Data
                     case "group": group = v; break;
                     case "move":
                         if (!int.TryParse(v, out move) || move < 0) { fail(raw.Line, $"Bad move '{v}'."); return; }
+                        break;
+                    case "jump":
+                        if (!int.TryParse(v, out jump) || jump < 0 || jump > Board.MaxHeight) { fail(raw.Line, $"Bad jump '{v}' (want 0-{Board.MaxHeight})."); return; }
                         break;
                     case "type": moveGroup = v.Length == 0 ? moveGroup : v; break;
                     case "name": name = v.Replace('_', ' '); break;
@@ -598,6 +618,7 @@ namespace SrpgCore.Data
                 Level = lvl,
                 MovePoints = move,
                 MovementGroup = moveGroup,
+                Jump = jump,
                 Vision = vision,
                 SpriteKey = spriteKey,
             };
@@ -708,6 +729,8 @@ namespace SrpgCore.Data
                 cond = spec.Substring(ifAt + 4).Trim();
                 spec = spec.Substring(0, ifAt).Trim();
                 if (cond.Length == 0) { fail(lineNo, "Empty condition after 'if'."); return null; }
+                if (cond.Length > EventLimits.MaxConditionLength)
+                { fail(lineNo, $"Condition too long ({cond.Length} > {EventLimits.MaxConditionLength})."); return null; }
             }
             ev.Condition = cond;
 
@@ -733,12 +756,20 @@ namespace SrpgCore.Data
 
         private static void BuildEvent(Chapter chapter, RawEvent raw, Action<int, string> fail)
         {
+            if (chapter.Events.Count >= EventLimits.MaxEventsPerChapter)
+            { fail(raw.Line, $"Too many events (max {EventLimits.MaxEventsPerChapter})."); return; }
+            if (raw.Condition.Length > EventLimits.MaxConditionLength)
+            { fail(raw.Line, $"Condition too long ({raw.Condition.Length} > {EventLimits.MaxConditionLength})."); return; }
+            if (raw.Commands.Count > EventLimits.MaxCommandsPerEvent)
+            { fail(raw.Line, $"Too many commands ({raw.Commands.Count} > {EventLimits.MaxCommandsPerEvent})."); return; }
             if (!TriggerAliases.TryGetValue(raw.TriggerWord, out EventTrigger trigger)
                 && !Enum.TryParse(raw.TriggerWord, true, out trigger))
             { fail(raw.Line, $"Unknown trigger '{raw.TriggerWord}'."); return; }
             var ev = new GameEvent(raw.Name, trigger, raw.Condition) { Priority = raw.Priority };
             foreach (var (text, lineNo) in raw.Commands)
             {
+                if (text.Length > EventLimits.MaxCommandLength)
+                { fail(lineNo, $"Command too long ({text.Length} > {EventLimits.MaxCommandLength})."); return; }
                 EventCommand cmd;
                 try { cmd = EventCommand.Parse(text); }
                 catch (FormatException ex) { fail(lineNo, ex.Message); return; }
@@ -752,12 +783,16 @@ namespace SrpgCore.Data
 
         private static string? DesugarDialogue(string text, int lineNo, Action<int, string> fail)
         {
+            if (text.Length > EventLimits.MaxCommandLength)
+            { fail(lineNo, $"Dialogue line too long ({text.Length} > {EventLimits.MaxCommandLength})."); return null; }
             int colon = text.IndexOf(':');
             if (colon < 0) { fail(lineNo, "Dialogue lines are '- speaker: text'."); return null; }
             string speaker = text.Substring(0, colon).Trim();
             string spoken = text.Substring(colon + 1).Trim();
             if (speaker.Length == 0 || spoken.Length == 0)
             { fail(lineNo, "Dialogue lines need a speaker and text."); return null; }
+            if (speaker.Contains(";") || spoken.Contains(";"))
+            { fail(lineNo, "Dialogue text must avoid semicolons (they split command args)."); return null; }
             return "speak;" + speaker + ";" + spoken;
         }
 

@@ -3,10 +3,13 @@ using System.Collections.Generic;
 
 namespace SrpgCore.Grid
 {
-    /// <summary>Pure-logic board holding terrain layout (Width, Height, Terrains, and a per-tile terrain key grid). Units and obstacles are not stored here; callers overlay them as blocked/ally sets when querying range and paths.</summary>
+    /// <summary>Pure-logic board holding terrain layout (Width, Height, Terrains, and a per-tile terrain key grid) plus optional per-tile height 0..MaxHeight for iso cliffs. Units and obstacles are not stored here; callers overlay them as blocked/ally sets when querying range and paths.</summary>
     public sealed class Board
     {
+        /// <summary>Maximum supported tile height (iso cliffs). HEIGHTS glyphs above this fail load.</summary>
+        public const int MaxHeight = 3;
         private readonly string[,] _terrainKeys;
+        private readonly int[,] _heights;
 
         /// <summary>Gets the board width in tiles.</summary>
         public int Width { get; }
@@ -32,6 +35,7 @@ namespace SrpgCore.Grid
             Width = width;
             Height = height;
             _terrainKeys = new string[width, height];
+            _heights = new int[width, height];
             for (int x = 0; x < width; x++)
                 for (int y = 0; y < height; y++)
                     _terrainKeys[x, y] = defaultTerrain;
@@ -52,6 +56,34 @@ namespace SrpgCore.Grid
             _terrainKeys[p.X, p.Y] = terrainKey;
         }
 
+        /// <summary>Gets the height at the given point (0 when flat).</summary>
+        /// <param name="p">The point to read.</param>
+        /// <returns>Height 0..MaxHeight.</returns>
+        public int GetHeight(GridPoint p)
+        {
+            if (!InBounds(p)) throw new ArgumentOutOfRangeException(nameof(p));
+            return _heights[p.X, p.Y];
+        }
+
+        /// <summary>Sets the height at the given point.</summary>
+        /// <param name="p">The point to update.</param>
+        /// <param name="height">Height 0..MaxHeight.</param>
+        public void SetHeight(GridPoint p, int height)
+        {
+            if (!InBounds(p)) throw new ArgumentOutOfRangeException(nameof(p));
+            if (height < 0 || height > MaxHeight) throw new ArgumentOutOfRangeException(nameof(height));
+            _heights[p.X, p.Y] = height;
+        }
+
+        /// <summary>True when any tile has non-zero height.</summary>
+        /// <returns>True when at least one tile is raised.</returns>
+        public bool HasHeights()
+        {
+            for (int x = 0; x < Width; x++)
+                for (int y = 0; y < Height; y++)
+                    if (_heights[x, y] != 0) return true;
+            return false;
+        }
         /// <summary>Gets the terrain key at the given point.</summary>
         /// <param name="p">The point to read.</param>
         /// <returns>The terrain key stored at the point.</returns>
@@ -101,6 +133,34 @@ namespace SrpgCore.Grid
                         throw new FormatException($"Unknown map glyph '{glyph}' at ({x},{y}).");
                     board.SetTerrain(new GridPoint(x, y), key);
                 }
+            return board;
+        }
+
+        /// <summary>Builds a board from ASCII rows plus parallel height rows (chars '0'..'3'), throwing on ragged rows or out-of-range heights.</summary>
+        public static Board FromRows(
+            string[] rows,
+            string[] heightRows,
+            string defaultTerrain,
+            IDictionary<char, string> legend,
+            IReadOnlyDictionary<string, TerrainType> terrains)
+        {
+            var board = FromRows(rows, defaultTerrain, legend, terrains);
+            if (heightRows == null) return board;
+            if (heightRows.Length != board.Height)
+                throw new FormatException($"HEIGHTS has {heightRows.Length} rows, expected {board.Height}.");
+            for (int y = 0; y < heightRows.Length; y++)
+            {
+                if (heightRows[y].Length != board.Width)
+                    throw new FormatException($"HEIGHTS row {y} has length {heightRows[y].Length}, expected {board.Width}.");
+                for (int x = 0; x < board.Width; x++)
+                {
+                    char g = heightRows[y][x];
+                    if (g == '.') continue;
+                    if (g < '0' || g > '3')
+                        throw new FormatException($"Bad height glyph '{g}' at ({x},{y}) (want 0-3 or .).");
+                    board.SetHeight(new GridPoint(x, y), g - '0');
+                }
+            }
             return board;
         }
     }

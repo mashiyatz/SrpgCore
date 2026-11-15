@@ -25,12 +25,12 @@ a web backend, Prowl, ...) consumes it the same way. This is the IP; keep it eng
 
 - `dotnet build SrpgCore.slnx` — build the library and verifier.
 - `dotnet run --project SrpgCore.Verify/SrpgCore.Verify.csproj` — run all checks
-  (463 checks across grid, RNG, combat, events, phases, objectives, AI, chapters,
+  (526 checks across grid, RNG, combat, events, phases, objectives, AI, chapters,
   durability/effectiveness, experience, staves, new event verbs, terrain-aware AI,
   seize, saves, promotion, fog, rescue, skills, support, statuses, staff accuracy,
   combat gains, skill/support battle math, battle triggers, phase tick, deployment
   selection, talk, inventory verbs, interactables, weapon ranks, ally AI,
-  fog-filtered threat/AI, AI tie-breaks, dance, canto, shove/swap/steal/healer/hold/regen/convoy/support-tick/replay-hash, warp/torch, set_terrain, MaxInventory, ReversesTriangle, FormationRegion, BecomesTerrainKey, shop gold/buy/sell; exits non-zero on failure). Keep this figure in sync with
+  fog-filtered threat/AI, AI tie-breaks, dance, canto, shove/swap/steal/healer/hold/regen/convoy/support-tick/replay-hash, warp/torch, set_terrain, MaxInventory, ReversesTriangle, FormationRegion, BecomesTerrainKey, shop gold/buy/sell, event hardening + orchestration, heights; exits non-zero on failure). Keep this figure in sync with
   `README.md` and the sibling SRPGDocs `docs/overview.md`.
 - No other CLI build/test/lint exists for this project.
 

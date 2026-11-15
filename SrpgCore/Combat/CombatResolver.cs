@@ -33,6 +33,10 @@ namespace SrpgCore.Combat
         public int EffectiveMultiplier { get; set; } = 3;
         /// <summary>Vision bonus granted by the Torch staff status (GBA default 2).</summary>
         public int TorchVisionBonus { get; set; } = 2;
+        /// <summary>Hit bonus per height level of advantage (attacker above defender).</summary>
+        public int HeightHitBonus { get; set; } = 10;
+        /// <summary>Damage bonus per height level when attacking down.</summary>
+        public int HeightDamageBonus { get; set; } = 1;
     }
 
     /// <summary>Battle-forecast numbers shown to the player before committing. Values: Damage per landed hit, Hit and Crit rates 0-100, AttackCount (1 or 2 when doubling), TriangleAdvantage (-1/0/1), and IsEffective flag.</summary>
@@ -118,7 +122,7 @@ namespace SrpgCore.Combat
         /// <param name="effective">True when the weapon is effective against the defender class.</param>
         /// <param name="rules">Formula tunables, or null for GBA defaults.</param>
         /// <returns>Clamped damage per landed hit.</returns>
-        public static int ComputeDamage(Unit attacker, Weapon attackWeapon, Unit defender, int defenderTerrainDefense, int triangle, bool effective, CombatRules? rules = null)
+        public static int ComputeDamage(Unit attacker, Weapon attackWeapon, Unit defender, int defenderTerrainDefense, int triangle, bool effective, CombatRules? rules = null, int heightDiff = 0)
         {
             if (attacker == null) throw new ArgumentNullException(nameof(attacker));
             if (attackWeapon == null) throw new ArgumentNullException(nameof(attackWeapon));
@@ -126,7 +130,8 @@ namespace SrpgCore.Combat
             rules ??= new CombatRules();
             int defenseStat = attackWeapon.IsMagic ? defender.Stats.Resistance : defender.Stats.Defense;
             int mightTerm = effective ? attackWeapon.Might * rules.EffectiveMultiplier : attackWeapon.Might;
-            return Math.Max(0, attacker.Stats.Power + mightTerm + triangle * rules.TriangleMightBonus - defenseStat - defenderTerrainDefense);
+            int heightDmg = heightDiff > 0 ? heightDiff * rules.HeightDamageBonus : 0;
+            return Math.Max(0, attacker.Stats.Power + mightTerm + triangle * rules.TriangleMightBonus - defenseStat - defenderTerrainDefense + heightDmg);
         }
 
         /// <summary>Hit rate: weapon hit plus skill and luck and triangle, minus defender avoid.</summary>
@@ -137,7 +142,7 @@ namespace SrpgCore.Combat
         /// <param name="defenderTerrainAvoid">Avoid from the defender tile added to defender avoid.</param>
         /// <param name="rules">Formula tunables, or null for GBA defaults.</param>
         /// <returns>Clamped hit rate from 0 to 100.</returns>
-        public static int ComputeHitRate(Unit attacker, Weapon attackWeapon, Unit defender, Weapon? defendWeapon, int defenderTerrainAvoid, CombatRules? rules = null)
+        public static int ComputeHitRate(Unit attacker, Weapon attackWeapon, Unit defender, Weapon? defendWeapon, int defenderTerrainAvoid, CombatRules? rules = null, int heightDiff = 0)
         {
             if (attacker == null) throw new ArgumentNullException(nameof(attacker));
             if (attackWeapon == null) throw new ArgumentNullException(nameof(attackWeapon));
@@ -147,6 +152,7 @@ namespace SrpgCore.Combat
             int hit = attackWeapon.Hit
                 + attacker.Stats.Skill * 2 + attacker.Stats.Luck / 2
                 + tri * rules.TriangleHitBonus
+                + heightDiff * rules.HeightHitBonus
                 - (AttackSpeed(defender, defendWeapon ?? attackWeapon)
                    + defenderTerrainAvoid + defender.Stats.Luck / 2);
             return Math.Max(0, Math.Min(100, hit));
@@ -222,15 +228,16 @@ namespace SrpgCore.Combat
             int supportHit = 0,
             int supportAvoid = 0,
             SeededRng? procRng = null,
-            IReadOnlyDictionary<string, SkillDef>? skillCatalog = null)
+            IReadOnlyDictionary<string, SkillDef>? skillCatalog = null,
+            int heightDiff = 0)
         {
             rules ??= new CombatRules();
             int tri = defendWeapon != null
                 ? WeaponTriangle.Advantage(attackWeapon, defendWeapon)
                 : 0;
             bool effective = attackWeapon.IsEffectiveAgainst(defender.ClassKey);
-            int damage = ComputeDamage(attacker, attackWeapon, defender, defenderTerrainDefense, tri, effective, rules);
-            int hit = ComputeHitRate(attacker, attackWeapon, defender, defendWeapon, defenderTerrainAvoid, rules);
+            int damage = ComputeDamage(attacker, attackWeapon, defender, defenderTerrainDefense, tri, effective, rules, heightDiff);
+            int hit = ComputeHitRate(attacker, attackWeapon, defender, defendWeapon, defenderTerrainAvoid, rules, heightDiff);
             int crit = ComputeCritRate(attacker, attackWeapon, defender);
             int attacks = ComputeAttackCount(attacker, attackWeapon, defender, defendWeapon, rules);
 
@@ -366,7 +373,8 @@ namespace SrpgCore.Combat
             int supportHit = 0,
             int supportAvoid = 0,
             SeededRng? procRng = null,
-            IReadOnlyDictionary<string, SkillDef>? skillCatalog = null)
+            IReadOnlyDictionary<string, SkillDef>? skillCatalog = null,
+            int heightDiff = 0)
         {
             if (attacker == null) throw new ArgumentNullException(nameof(attacker));
             if (attackWeapon == null) throw new ArgumentNullException(nameof(attackWeapon));
@@ -382,7 +390,7 @@ namespace SrpgCore.Combat
             var atkForecast = Forecast(attacker, attackWeapon, defender, defendWeapon,
                 attackerTerrainAvoid, attackerTerrainDefense,
                 defenderTerrainAvoid, defenderTerrainDefense, rules,
-                attackerSkills, defenderSkills, supportHit, supportAvoid, procRng, skillCatalog);
+                attackerSkills, defenderSkills, supportHit, supportAvoid, procRng, skillCatalog, heightDiff);
 
             for (int round = 0; round < atkForecast.AttackCount; round++)
             {
@@ -393,7 +401,7 @@ namespace SrpgCore.Combat
                     var counterForecast = Forecast(defender, defendWeapon!, attacker, attackWeapon,
                         defenderTerrainAvoid, defenderTerrainDefense,
                         attackerTerrainAvoid, attackerTerrainDefense, rules,
-                        defenderSkills, attackerSkills, supportAvoid, supportHit, procRng, skillCatalog);
+                        defenderSkills, attackerSkills, supportAvoid, supportHit, procRng, skillCatalog, -heightDiff);
                     atkHP = Strike(counterForecast, ref atkHP, rng, rules, result, attackerStrike: false);
                     if (atkHP <= 0) break;
                 }
@@ -449,11 +457,12 @@ namespace SrpgCore.Combat
             int supportHit = 0,
             int supportAvoid = 0,
             SeededRng? procRng = null,
-            IReadOnlyDictionary<string, SkillDef>? skillCatalog = null)
+            IReadOnlyDictionary<string, SkillDef>? skillCatalog = null,
+            int heightDiff = 0)
         {
             CombatResult script = GenerateScript(attacker, attackWeapon, defender, defendWeapon, distance,
                 attackerTerrainAvoid, attackerTerrainDefense, defenderTerrainAvoid, defenderTerrainDefense,
-                rng, rules, attackerSkills, defenderSkills, supportHit, supportAvoid, procRng, skillCatalog);
+                rng, rules, attackerSkills, defenderSkills, supportHit, supportAvoid, procRng, skillCatalog, heightDiff);
             ApplyScript(attacker, defender, script);
             return script;
         }
@@ -493,7 +502,8 @@ namespace SrpgCore.Combat
             int supportHit = 0,
             int supportAvoid = 0,
             SeededRng? procRng = null,
-            IReadOnlyDictionary<string, SkillDef>? skillCatalog = null)
+            IReadOnlyDictionary<string, SkillDef>? skillCatalog = null,
+            int heightDiff = 0)
         {
             if (attackEntry == null) throw new ArgumentNullException(nameof(attackEntry));
             if (rng == null) throw new ArgumentNullException(nameof(rng));
@@ -516,7 +526,7 @@ namespace SrpgCore.Combat
                 defendEntry?.Weapon,
                 attackerTerrainAvoid, attackerTerrainDefense,
                 defenderTerrainAvoid, defenderTerrainDefense, rules,
-                attackerSkills, defenderSkills, supportHit, supportAvoid, procRng, skillCatalog);
+                attackerSkills, defenderSkills, supportHit, supportAvoid, procRng, skillCatalog, heightDiff);
 
             for (int round = 0; round < atkForecast.AttackCount; round++)
             {
@@ -529,7 +539,7 @@ namespace SrpgCore.Combat
                     var counterForecast = Forecast(defender, defendEntry!.Weapon, attacker, attackEntry.Weapon,
                         defenderTerrainAvoid, defenderTerrainDefense,
                         attackerTerrainAvoid, attackerTerrainDefense, rules,
-                        defenderSkills, attackerSkills, supportAvoid, supportHit, procRng, skillCatalog);
+                        defenderSkills, attackerSkills, supportAvoid, supportHit, procRng, skillCatalog, -heightDiff);
                     defendEntry!.UsesLeft--;
                     atkHP = Strike(counterForecast, ref atkHP, rng, rules, result, attackerStrike: false);
                     if (defendEntry.IsBroken) defenderCounters = false;

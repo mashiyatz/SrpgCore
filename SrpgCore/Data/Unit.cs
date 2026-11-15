@@ -62,6 +62,9 @@ namespace SrpgCore.Data
         /// <summary>Movement group key into terrain costs (default infantry).</summary>
         public string MovementGroup { get; set; } = MovementGroups.Infantry;
 
+        /// <summary>Climb allowance: max uphill height gain per step (0..3). Fliers ignore heights.</summary>
+        public int Jump { get; set; } = 1;
+
         /// <summary>Fog sight radius in Manhattan tiles (default 5, GBA-ish).</summary>
         public int Vision { get; set; } = 5;
 
@@ -103,6 +106,7 @@ namespace SrpgCore.Data
                 CurrentHP = CurrentHP,
                 MovePoints = MovePoints,
                 MovementGroup = MovementGroup,
+                Jump = Jump,
                 Vision = Vision,
                 CarryingNid = CarryingNid,
                 SpriteKey = SpriteKey,

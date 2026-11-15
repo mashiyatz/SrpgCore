@@ -13,8 +13,6 @@ namespace SrpgCore.Events
     /// </summary>
     public static class SimpleConditionEvaluator
     {
-        private static readonly string[] Ops = { "==", "!=", ">=", "<=", ">", "<" };
-
         /// <summary>Evaluates a condition against trigger vars merged over chapter state vars (see EventVars) where empty always passes and clauses join with AND.</summary>
         /// <param name="condition">The clauses joined by AND with each shaped path op literal.</param>
         /// <param name="vars">The nested variables that dotted paths resolve against.</param>
@@ -22,15 +20,72 @@ namespace SrpgCore.Events
         public static bool Evaluate(string condition, IReadOnlyDictionary<string, object?> vars)
         {
             if (string.IsNullOrWhiteSpace(condition)) return true;
-            foreach (string clause in condition.Split(new[] { "&&" }, StringSplitOptions.RemoveEmptyEntries))
-                if (!EvaluateClause(clause.Trim(), vars)) return false;
+            if (condition.Length > EventLimits.MaxConditionLength)
+                throw new FormatException($"Condition too long ({condition.Length} > {EventLimits.MaxConditionLength}).");
+            List<string> clauses = SplitClauses(condition);
+            if (clauses.Count > EventLimits.MaxConditionClauses)
+                throw new FormatException($"Too many condition clauses ({clauses.Count} > {EventLimits.MaxConditionClauses}).");
+            if (clauses.Count == 0)
+                throw new FormatException("Condition has no clauses.");
+            foreach (string clause in clauses)
+                if (!EvaluateClause(clause, vars)) return false;
             return true;
+        }
+
+        // Splits on && only when outside single-quoted literals so quoted text may contain &&.
+        // Rejects stray single & and empty clauses so malformed input fails loudly.
+        private static List<string> SplitClauses(string condition)
+        {
+            var clauses = new List<string>();
+            int start = 0;
+            bool inQuote = false;
+            bool sawSeparator = false;
+            for (int i = 0; i < condition.Length; i++)
+            {
+                char c = condition[i];
+                if (c == '\'')
+                {
+                    inQuote = !inQuote;
+                    continue;
+                }
+                if (inQuote) continue;
+                if (c == '&')
+                {
+                    if (i + 1 < condition.Length && condition[i + 1] == '&')
+                    {
+                        string clause = condition.Substring(start, i - start).Trim();
+                        if (clause.Length == 0)
+                            throw new FormatException("Empty condition clause before '&&'.");
+                        clauses.Add(clause);
+                        sawSeparator = true;
+                        start = i + 2;
+                        i++; // skip second '&'
+                    }
+                    else
+                    {
+                        throw new FormatException($"Stray '&' at position {i} (want '&&').");
+                    }
+                }
+            }
+            if (inQuote) throw new FormatException("Unterminated quoted literal in condition.");
+            string tail = condition.Substring(start).Trim();
+            if (tail.Length == 0)
+            {
+                if (sawSeparator) throw new FormatException("Empty condition clause after '&&'.");
+                return clauses;
+            }
+            clauses.Add(tail);
+            return clauses;
         }
 
         private static bool EvaluateClause(string clause, IReadOnlyDictionary<string, object?> vars)
         {
+            if (string.IsNullOrWhiteSpace(clause))
+                throw new FormatException("Empty condition clause.");
             if (!TrySplitOperator(clause, out string op, out string leftText, out string rightText))
                 throw new FormatException($"Cannot parse condition clause '{clause}'.");
+            if (leftText.Length == 0 || rightText.Length == 0)
+                throw new FormatException($"Condition clause '{clause}' needs 'path op literal'.");
             object? left = Resolve(leftText, vars);
             object? right = ParseLiteral(rightText);
             int cmp = Compare(left, right);
@@ -49,22 +104,43 @@ namespace SrpgCore.Events
         /// <summary>
         /// Finds the operator split, ignoring occurrences inside 'quoted' literals
         /// (so `name == 'a==b'` splits on the real ==). Ties prefer the longer op.
+        /// Single left-to-right scan; avoids O(n^2) quote recounting.
         /// </summary>
         private static bool TrySplitOperator(string clause, out string op, out string left, out string right)
         {
-            int bestIndex = int.MaxValue;
+            int bestIndex = -1;
             string bestOp = "";
-            foreach (string candidate in Ops)
+            bool inQuote = false;
+            for (int i = 0; i < clause.Length; i++)
             {
-                int i = IndexOfOutsideQuotes(clause, candidate);
-                if (i < 0) continue;
-                if (i < bestIndex || (i == bestIndex && candidate.Length > bestOp.Length))
+                char c = clause[i];
+                if (c == '\'') { inQuote = !inQuote; continue; }
+                if (inQuote) continue;
+                // Prefer longest match at the earliest position: check 2-char ops first.
+                if (i + 1 < clause.Length)
+                {
+                    string two = clause.Substring(i, 2);
+                    if (two == "==" || two == "!=" || two == ">=" || two == "<=")
+                    {
+                        bestIndex = i;
+                        bestOp = two;
+                        break; // earliest position wins; two-char is longest here
+                    }
+                }
+                if (c == '>' || c == '<')
                 {
                     bestIndex = i;
-                    bestOp = candidate;
+                    bestOp = c.ToString();
+                    break; // earliest single-char operator outside quotes
+                }
+                if (c == '=' || c == '!')
+                {
+                    // Lone = or ! without its pair is malformed; let caller report it.
+                    // Record position so error context is stable, but do not accept.
+                    continue;
                 }
             }
-            if (bestIndex == int.MaxValue)
+            if (bestIndex < 0)
             {
                 op = ""; left = ""; right = "";
                 return false;
@@ -73,20 +149,6 @@ namespace SrpgCore.Events
             left = clause.Substring(0, bestIndex).Trim();
             right = clause.Substring(bestIndex + bestOp.Length).Trim();
             return true;
-        }
-
-        private static int IndexOfOutsideQuotes(string text, string value)
-        {
-            int from = 0;
-            while (true)
-            {
-                int i = text.IndexOf(value, from, StringComparison.Ordinal);
-                if (i < 0) return -1;
-                int quotes = 0;
-                for (int k = 0; k < i; k++) if (text[k] == '\'') quotes++;
-                if (quotes % 2 == 0) return i;
-                from = i + 1;
-            }
         }
 
         private static object? Resolve(string path, IReadOnlyDictionary<string, object?> vars)
