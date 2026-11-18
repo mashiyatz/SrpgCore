@@ -323,6 +323,13 @@ namespace SrpgCore.Data
                     case "defeat": defeats.Add(value); break;
                     case "next": chapter.NextChapter = value; break;
                     case "music": chapter.MusicTrack = value; break;
+                    case "weather":
+                        {
+                            string w = value.Trim().ToLowerInvariant();
+                            if (w.Length == 0 || w == "rain" || w == "storm") chapter.Weather = w;
+                            else fail(line, $"Bad weather '{value}' (want rain or storm).");
+                            break;
+                        }
                     case "maxdeploy":
                         if (!int.TryParse(value, out int md) || md < 0) fail(line, $"Bad maxDeploy '{value}'.");
                         else chapter.MaxDeploy = md;

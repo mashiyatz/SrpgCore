@@ -380,6 +380,32 @@ namespace SrpgCore.Verify
             Check(!CommandCatalog.TryValidate(EventCommand.Parse("wait;601"), out _), "wait over max rejected");
             Check(!CommandCatalog.TryValidate(new EventCommand("wait", new[] { "1e309" }), out _), "wait overflow rejected");
 
+            Check(CommandCatalog.TryValidate(EventCommand.Parse("play_music;battle"), out _), "play_music validates");
+            Check(CommandCatalog.TryValidate(EventCommand.Parse("play_music;battle;loop"), out _), "play_music loop validates");
+            Check(CommandCatalog.TryValidate(EventCommand.Parse("play_music;battle;once;1.5"), out _), "play_music once fade validates");
+            Check(!CommandCatalog.TryValidate(EventCommand.Parse("play_music;battle;loud"), out _), "play_music bad mode rejected");
+            Check(!CommandCatalog.TryValidate(EventCommand.Parse("play_music;battle;loop;99"), out _), "play_music fade over max rejected");
+            Check(CommandCatalog.TryValidate(EventCommand.Parse("queue_music;intro;once"), out _), "queue_music validates");
+            Check(!CommandCatalog.TryValidate(EventCommand.Parse("queue_music;intro;loud"), out _), "queue_music bad mode rejected");
+            Check(CommandCatalog.TryValidate(EventCommand.Parse("crossfade_music;battle;2"), out _), "crossfade_music validates");
+            Check(CommandCatalog.TryValidate(EventCommand.Parse("crossfade_music;battle;2;once"), out _), "crossfade_music mode validates");
+            Check(!CommandCatalog.TryValidate(EventCommand.Parse("crossfade_music;battle;-1"), out _), "crossfade_music negative fade rejected");
+            Check(CommandCatalog.TryValidate(EventCommand.Parse("stop_music"), out _), "stop_music validates");
+            Check(CommandCatalog.TryValidate(EventCommand.Parse("stop_music;1"), out _), "stop_music fade validates");
+            Check(!CommandCatalog.TryValidate(EventCommand.Parse("stop_music;99"), out _), "stop_music fade over max rejected");
+            Check(CommandCatalog.TryParseMusicMode("loop", out bool loopOn, out _) && loopOn, "music mode loop");
+            Check(CommandCatalog.TryParseMusicMode("once", out bool loopOff, out _) && !loopOff, "music mode once");
+
+            var musState = ChapterState.StartNew(TestChapter(), 1);
+            var musRunner = new ChapterRunner(musState);
+            var musEv = new GameEvent("mus", EventTrigger.LevelStart);
+            musEv.AddCommand("play_music;battle;once");
+            musEv.AddCommand("queue_music;battle;loop");
+            musEv.AddCommand("crossfade_music;battle;1;loop");
+            musEv.AddCommand("stop_music;1");
+            var musRes = EventRunner.Run(musEv, new Dictionary<string, object?>(), musRunner);
+            Check(musRes.Ran && musRes.Error == null, "music verbs run headless");
+
             var sayState = ChapterState.StartNew(TestChapter(), 1);
             var sayRunner = new ChapterRunner(sayState);
             var sayEv = new GameEvent("mix", EventTrigger.LevelStart);
@@ -1157,6 +1183,10 @@ format: 1
             Check(isoRes.Ok && isoRes.Chapter != null && isoRes.Chapter.IsIso, "view iso parses");
             var musRes = MarkdownChapterLoader.Load("# T\n## META\nformat: 1\nmusic: battle\n## LEGEND\n.: plain\n## MAP\n.\n", "mus.md");
             Check(musRes.Ok && musRes.Chapter != null && musRes.Chapter.MusicTrack == "battle", "music meta parses");
+            var wthRes = MarkdownChapterLoader.Load("# T\n## META\nformat: 1\nweather: storm\n## LEGEND\n.: plain\n## MAP\n.\n", "wth.md");
+            Check(wthRes.Ok && wthRes.Chapter != null && wthRes.Chapter.Weather == "storm", "weather meta parses");
+            LoadFails("# T\n## META\nformat: 1\nweather: fog\n## LEGEND\n.: plain\n## MAP\n.\n",
+                "Bad weather", "bad weather rejected");
         }
 
         private static void DurabilityEffectiveChecks()

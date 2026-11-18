@@ -108,8 +108,10 @@ namespace SrpgCore.Events
                 ["torch"]         = (2, 2, "torch;unit_nid;amount — grant torch status for 3 turns and boost vision."),
                 ["set_terrain"]   = (2, 2, "set_terrain;x,y;terrainKey — change board terrain at tile."),
                 ["play_sound"]    = (1, 2, "play_sound;sfx[;volume] — presentation blip, no state."),
-                ["play_music"]    = (1, 2, "play_music;track[;loop] — presentation music, no state."),
-                ["stop_music"]    = (0, 0, "stop_music — stop presentation music, no state."),
+                ["play_music"]    = (1, 3, "play_music;track[;loop|once[;fadeSecs]] — presentation music, loops by default, no state."),
+                ["queue_music"]   = (1, 2, "queue_music;track[;loop|once] — start when current once-track ends, no state."),
+                ["crossfade_music"] = (1, 3, "crossfade_music;track[;seconds[;loop|once]] — fade-out/in switch, no state."),
+                ["stop_music"]    = (0, 1, "stop_music[;fadeSecs] — stop presentation music, no state."),
                 ["show_effect"]   = (2, 3, "show_effect;effect;x,y[;ttl] — presentation flash, no state."),
                 ["banner"]        = (1, 3, "banner;text[;art][;sfx] — presentation banner, no state."),
             };
@@ -139,6 +141,38 @@ namespace SrpgCore.Events
         /// <summary>Maximum allowed wait duration in seconds (prevents hangs from adversarial or malformed content).</summary>
         public const double MaxWaitSeconds = 600.0;
 
+        /// <summary>Maximum allowed music fade duration in seconds (shortcut fade-in/out, no overlap).</summary>
+        public const double MaxMusicFadeSeconds = 30.0;
+
+        /// <summary>True when the token selects looped music (loop/true/1/on); false selects once (once/false/0/off).</summary>
+        public static bool TryParseMusicMode(string token, out bool loop, out string? error)
+        {
+            string t = (token ?? "").Trim().ToLowerInvariant();
+            if (t == "loop" || t == "true" || t == "1" || t == "on" || t == "repeat") { loop = true; error = null; return true; }
+            if (t == "once" || t == "false" || t == "0" || t == "off" || t == "single") { loop = false; error = null; return true; }
+            loop = true; error = $"'{token}' wants loop|once."; return false;
+        }
+
+        /// <summary>Parses a music fade duration in seconds, clamped to the allowed range.</summary>
+        public static bool TryParseMusicFade(string token, out double seconds, out string? error)
+        {
+            seconds = 0;
+            if (!double.TryParse((token ?? "").Trim(), System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands,
+                System.Globalization.CultureInfo.InvariantCulture, out seconds)
+                || double.IsNaN(seconds) || double.IsInfinity(seconds))
+            {
+                error = "fade seconds must be a finite number.";
+                return false;
+            }
+            if (seconds < 0 || seconds > MaxMusicFadeSeconds)
+            {
+                error = $"fade seconds must be 0-{MaxMusicFadeSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)}.";
+                return false;
+            }
+            error = null;
+            return true;
+        }
+
         private static bool TryValidateSemantics(EventCommand command, out string? error)
         {
             if (command.Verb.Equals("wait", StringComparison.OrdinalIgnoreCase))
@@ -159,6 +193,48 @@ namespace SrpgCore.Events
                 if (secs > MaxWaitSeconds)
                 {
                     error = $"'wait' seconds must be <= {MaxWaitSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)}.";
+                    return false;
+                }
+            }
+            else if (command.Verb.Equals("play_music", StringComparison.OrdinalIgnoreCase))
+            {
+                if (command.Args.Length >= 2 && !TryParseMusicMode(command.Args[1], out _, out string? merr))
+                {
+                    error = "'play_music' mode " + merr;
+                    return false;
+                }
+                if (command.Args.Length >= 3 && !TryParseMusicFade(command.Args[2], out _, out string? ferr))
+                {
+                    error = "'play_music' fade " + ferr;
+                    return false;
+                }
+            }
+            else if (command.Verb.Equals("queue_music", StringComparison.OrdinalIgnoreCase))
+            {
+                if (command.Args.Length >= 2 && !TryParseMusicMode(command.Args[1], out _, out string? merr))
+                {
+                    error = "'queue_music' mode " + merr;
+                    return false;
+                }
+            }
+            else if (command.Verb.Equals("crossfade_music", StringComparison.OrdinalIgnoreCase))
+            {
+                if (command.Args.Length >= 2 && !TryParseMusicFade(command.Args[1], out _, out string? ferr))
+                {
+                    error = "'crossfade_music' fade " + ferr;
+                    return false;
+                }
+                if (command.Args.Length >= 3 && !TryParseMusicMode(command.Args[2], out _, out string? merr))
+                {
+                    error = "'crossfade_music' mode " + merr;
+                    return false;
+                }
+            }
+            else if (command.Verb.Equals("stop_music", StringComparison.OrdinalIgnoreCase))
+            {
+                if (command.Args.Length >= 1 && !TryParseMusicFade(command.Args[0], out _, out string? ferr))
+                {
+                    error = "'stop_music' fade " + ferr;
                     return false;
                 }
             }

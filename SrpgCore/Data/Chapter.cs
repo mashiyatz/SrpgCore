@@ -216,6 +216,8 @@ namespace SrpgCore.Data
         public string NextChapter { get; set; } = "";
         /// <summary>Presentation music track (pack music name), empty for the pack default.</summary>
         public string MusicTrack { get; set; } = "";
+        /// <summary>Presentation weather (host-interpreted), empty for clear. Loader admits rain|storm.</summary>
+        public string Weather { get; set; } = "";
 
         /// <summary>Reports authoring errors for editors to surface, empty when clean.</summary>
         /// <returns>One message per off-board tile, duplicate name, bad verb, or dangling tag.</returns>

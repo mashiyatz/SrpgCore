@@ -79,6 +79,8 @@ namespace SrpgCore.Tactics
                 case "wait":
                 case "play_sound":
                 case "play_music":
+                case "queue_music":
+                case "crossfade_music":
                 case "stop_music":
                 case "show_effect":
                 case "banner":
