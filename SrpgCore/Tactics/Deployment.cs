@@ -76,7 +76,7 @@ namespace SrpgCore.Tactics
                 if (!posSeen.Add(d.Position.X + "," + d.Position.Y))
                     errors.Add($"Duplicate deployment tile {d.Position} (nid '{d.Unit.Nid}').");
             foreach (Deployment d in chosen)
-                if (!chapter.Board.InBounds(d.Position))
+                if (chapter.Board != null && !chapter.Board.InBounds(d.Position))
                     errors.Add($"Deployment '{d.Unit.Nid}' at {d.Position} is off-board.");
 
             return (chosen, errors);

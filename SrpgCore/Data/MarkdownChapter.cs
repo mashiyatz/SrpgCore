@@ -207,13 +207,13 @@ namespace SrpgCore.Data
 
                 if (currentEvent != null)
                 {
-                    string cmd = line.StartsWith("- ", StringComparison.Ordinal)
+                    string? cmd = line.StartsWith("- ", StringComparison.Ordinal)
                         ? DesugarDialogue(line.Substring(2), lineNo, Fail) : line;
                     if (cmd != null) currentEvent.Commands.Add((cmd, lineNo));
                     continue;
                 }
 
-                string[] cells = line.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+                string[] cells = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
                 switch (section)
                 {
                     case Section.None:
@@ -372,7 +372,7 @@ namespace SrpgCore.Data
         {
             int line = 0;
             foreach (var (k, v, ln) in meta) if (k == which && v == text) { line = ln; break; }
-            string[] parts = text.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+            string[] parts = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length == 0) { fail(line, $"Empty {which} spec."); return; }
             string head = parts[0].ToLowerInvariant();
             if (which == "victory")
@@ -747,7 +747,7 @@ namespace SrpgCore.Data
             { fail(lineNo, "Event headers need a name and a trigger."); return null; }
             var ev = new RawEvent { Name = name, Line = lineNo };
 
-            string[] toks = spec.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+            string[] toks = spec.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
             if (toks.Length >= 2 && toks[toks.Length - 2].Equals("priority", StringComparison.OrdinalIgnoreCase))
             {
                 if (!int.TryParse(toks[toks.Length - 1], out ev.Priority))
@@ -766,7 +766,7 @@ namespace SrpgCore.Data
             }
             ev.Condition = cond;
 
-            string[] head = spec.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+            string[] head = spec.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
             if (head.Length == 4 && head[0].Equals("turn", StringComparison.OrdinalIgnoreCase))
             {
                 if (!int.TryParse(head[1], out int turn) || turn < 1 || head[2] != "-")
