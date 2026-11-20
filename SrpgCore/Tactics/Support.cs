@@ -99,7 +99,7 @@ namespace SrpgCore.Tactics
         /// <returns>Five per rank step (C 5, B 10, A 15).</returns>
         public static int BonusForRank(SupportRank rank) => (int)rank * 5;
 
-        /// <summary>Grants 1 support point per adjacent alive ally pair (GBA-flavored tick).</summary>
+        /// <summary>Grants 1 support point per adjacent alive player pair (GBA-flavored tick; enemies never bond).</summary>
         /// <param name="field">Battlefield to read adjacency from.</param>
         /// <returns>Number of pairs that gained a point.</returns>
         public int TickAdjacent(Battlefield field)
@@ -108,10 +108,10 @@ namespace SrpgCore.Tactics
             var seen = new HashSet<(string, string)>();
             foreach (var a in field.Placed)
             {
-                if (!a.Unit.IsAlive) continue;
+                if (!a.Unit.IsAlive || a.Unit.Side != Data.Affiliation.Player) continue;
                 foreach (var b in field.Placed)
                 {
-                    if (ReferenceEquals(a, b) || !b.Unit.IsAlive) continue;
+                    if (ReferenceEquals(a, b) || !b.Unit.IsAlive || b.Unit.Side != Data.Affiliation.Player) continue;
                     if (a.Position.ManhattanDistance(b.Position) != 1) continue;
                     var k = Key(a.Unit.Nid, b.Unit.Nid);
                     if (seen.Contains(k)) continue;

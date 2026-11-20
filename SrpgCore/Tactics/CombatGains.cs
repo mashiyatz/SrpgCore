@@ -13,7 +13,22 @@ namespace SrpgCore.Tactics
     /// </summary>
     public static class CombatGains
     {
-        /// <summary>Grants post-combat experience and weapon experience to the attacker.</summary>
+        /// <summary>Resolves growth rates: unit override wins, then class, then host fallback.</summary>
+        /// <param name="unit">Unit leveling up.</param>
+        /// <param name="db">Class database (null when unavailable).</param>
+        /// <param name="fallback">Host default growths.</param>
+        /// <returns>Growth rates to roll.</returns>
+        public static GrowthRates ResolveGrowths(Unit unit, Data.ClassDatabase? db, GrowthRates fallback)
+        {
+            if (unit == null) throw new ArgumentNullException(nameof(unit));
+            if (fallback == null) throw new ArgumentNullException(nameof(fallback));
+            if (unit.Growths != null) return unit.Growths;
+            if (db != null && db.TryGet(unit.ClassKey, out UnitClass? cls) && cls?.Growths != null)
+                return cls.Growths;
+            return fallback;
+        }
+
+        /// <summary>Grants post-combat experience and weapon experience to the attacker. Growth precedence is unit override, then class database, then the host fallback (hosts without a class table pass null and get unit-or-default).</summary>
         /// <param name="attacker">Unit receiving experience.</param>
         /// <param name="defender">Foe whose level shapes the payout.</param>
         /// <param name="damageDealt">Summed damage dealt in the exchange.</param>

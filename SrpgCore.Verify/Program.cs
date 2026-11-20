@@ -93,6 +93,8 @@ namespace SrpgCore.Verify
             DecompCoreChecks();
             Console.WriteLine("[height]");
             HeightChecks();
+            Console.WriteLine("[campaign]");
+            CampaignChecks();
 
             Console.WriteLine($"-- {_passed} passed, {_failed} failed --");
             return _failed == 0 ? 0 : 1;
@@ -838,6 +840,185 @@ namespace SrpgCore.Verify
                 "diagnostic carries event/cmd/verb/mode");
         }
 
+        private static void CampaignChecks()
+        {
+            // Benched units survive transfer (adversarial: deploy screen removes them from Field).
+            var ch1 = TestChapter();
+            // Adversarial setup: second turn-1 player + weapon on hero (TestChapter ships neither).
+            var heroTpl = ch1.Deployments[0].Unit;
+            heroTpl.Inventory.Add(new InventoryEntry(ch1.Armory["iron-sword"]));
+            var hero2 = heroTpl.Clone("hero2");
+            ch1.Deployments.Add(new Deployment(hero2, new GridPoint(1, 1)));
+            var s1 = ChapterState.StartNew(ch1, 7);
+            // Simulate deploy screen: bench everyone, deploy only hero.
+            for (int i = s1.Field.Placed.Count - 1; i >= 0; i--)
+                if (s1.Field.Placed[i].Unit.Nid != "hero") s1.Field.Remove(s1.Field.Placed[i]);
+            FindByNid(s1, "hero").Unit.Experience = 90;
+            FindByNid(s1, "hero").Unit.Stats.Power = 9;
+            var roster = CampaignRoster.Collect(s1);
+            bool hasBenchedHero2 = false, hasEirika = false;
+            foreach (var u in roster) { if (u.Nid == "hero2") hasBenchedHero2 = true; if (u.Nid == "eirika") hasEirika = true; }
+            Check(roster.Count >= 2 && hasBenchedHero2, "collect keeps benched turn-1 players");
+            Check(hasEirika, "collect keeps unspawned future player reinforcements");
+            bool hasWeaponDef = false;
+            foreach (var u in roster) foreach (var inv in u.Inventory) if (inv.Weapon != null) hasWeaponDef = true;
+            Check(hasWeaponDef, "weapon snapshots carried");
+
+            // Armory divergence: carried weapon keeps Ch1 stats even when Ch2 differs.
+            var ch2 = TestChapter();
+            ch2.Nid = "ch2";
+            ch2.Armory["iron-sword"] = new Weapon("iron-sword", "Iron Sword", WeaponType.Sword, WeaponRank.E,
+                might: 99, hit: 90, crit: 0, weight: 5, minRange: 1, maxRange: 1, maxUses: 40);
+            var opts = new CampaignTransferOptions { HealFull = true };
+            var applied = CampaignRoster.Apply(ch2, roster, opts);
+            Check(applied.applied >= 1, "apply overwrites matching nids");
+            Unit? heroNext = null;
+            foreach (var d in ch2.Deployments) if (d.Unit.Nid == "hero") heroNext = d.Unit;
+            Check(heroNext != null && heroNext.Stats.Power == 9, "carried stats overwrite authored defaults");
+            Check(heroNext != null && heroNext.Inventory.Count > 0 && heroNext.Inventory[0].Weapon.Might != 99, "carried weapon keeps Ch1 definition, not Ch2 armory");
+
+            // Heal-full + status clear on entry.
+            if (heroNext != null) { heroNext.CurrentHP = 1; heroNext.Statuses["poison"] = 3; }
+            var roster2 = new List<UnitSnapshot>();
+            foreach (var d in ch2.Deployments)
+                if (d.Unit.Nid == "hero" && heroNext != null)
+                {
+                    var snap = SaveSystem.Save(ChapterState.StartNew(ch2, 1));
+                    foreach (var ps in snap.Placed)
+                        if (ps.Unit.Nid == "hero") { ps.Unit.CurrentHP = 1; ps.Unit.Statuses["poison"] = 3; roster2.Add(ps.Unit); }
+                }
+            var ch3 = TestChapter(); ch3.Nid = "ch3";
+            var o3 = new CampaignTransferOptions { HealFull = true };
+            CampaignRoster.Apply(ch3, roster2.Count > 0 ? roster2 : roster, o3);
+            foreach (var d in ch3.Deployments)
+                if (d.Unit.Nid == "hero")
+                    Check(d.Unit.CurrentHP == d.Unit.Stats.MaxHP && d.Unit.Statuses.Count == 0, "GBA heal-full clears damage and statuses");
+
+            // Permadeath toggle: dead nids are removed from the next deployment list.
+            var dead = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "hero" };
+            var ch4 = TestChapter(); ch4.Nid = "ch4";
+            var r4 = CampaignRoster.Apply(ch4, roster, new CampaignTransferOptions { HealFull = true, Permadeath = true, DeadNids = dead });
+            bool heroGone = true;
+            foreach (var d in ch4.Deployments) if (d.Unit.Nid == "hero") heroGone = false;
+            Check(heroGone && r4.skippedDead >= 1, "permadeath removes the fallen from the next roster");
+            var ch5 = TestChapter(); ch5.Nid = "ch5";
+            CampaignRoster.Apply(ch5, roster, new CampaignTransferOptions { Permadeath = false, DeadNids = dead });
+            bool heroBack = false;
+            foreach (var d in ch5.Deployments) if (d.Unit.Nid == "hero") heroBack = true;
+            Check(heroBack, "casual mode revives the fallen");
+            // Surplus roster is legal now: more turn-1 players than MaxDeploy validates clean.
+            var ch6 = TestChapter(); ch6.Nid = "ch6";
+            CampaignRoster.Apply(ch6, roster, new CampaignTransferOptions { HealFull = true });
+            Check(ch6.Validate().Count == 0, "surplus campaign roster validates (bench the rest)");
+
+            // Growths parsing + resolver precedence.
+            var gtext = "# G: T\n## META\nformat: 1\nobjective: o\nvictory: rout\ndefeat: all_dead\n## LEGEND\n.: plain\n## MAP\n.\n## ARMORY\niron-sword Iron_Sword sword E 5 90 0 5 1-1 40\n## UNITS\n0,0 h1 player mercenary 1 20 5 6 7 3 4 1 8 items:iron-sword growths:100,0,0,0,0,0,0\n";
+            var gres = MarkdownChapterLoader.Load(gtext, "g.md");
+            Check(gres.Ok && gres.Chapter!.Deployments[0].Unit.Growths != null && gres.Chapter.Deployments[0].Unit.Growths!.HP == 100, "growths token parses");
+            var ptext = "# P: T\n## META\nformat: 1\npermadeath: true\nobjective: o\nvictory: rout\ndefeat: all_dead\n## LEGEND\n.: plain\n## MAP\n.\n## ARMORY\niron-sword Iron_Sword sword E 5 90 0 5 1-1 40\n## UNITS\n0,0 h1 player mercenary 1 20 5 6 7 3 4 1 8 items:iron-sword\n";
+            var pres = MarkdownChapterLoader.Load(ptext, "p.md");
+            Check(pres.Ok && pres.Chapter!.Permadeath, "permadeath META parses");
+            var badPerm = MarkdownChapterLoader.Load(ptext.Replace("permadeath: true", "permadeath: maybe"), "bp.md");
+            Check(!badPerm.Ok, "bad permadeath rejected");
+            var badGrowth = MarkdownChapterLoader.Load(gtext.Replace("growths:100,0,0,0,0,0,0", "growths:100,0"), "bg.md");
+            Check(!badGrowth.Ok, "bad growths rejected");
+
+            var gu = FreshKnight();
+            gu.Growths = new GrowthRates { HP = 100 };
+            var resolved = CombatGains.ResolveGrowths(gu, null, new GrowthRates());
+            Check(resolved.HP == 100, "unit growths beat fallback");
+            var fallback = new GrowthRates { HP = 11 };
+            Check(CombatGains.ResolveGrowths(FreshKnight(), null, fallback).HP == 11, "fallback used when no override");
+            // Class middle layer: unit null + class set resolves class.
+            var db = new ClassDatabase();
+            db.Add(new UnitClass("mercenary", "Mercenary", MoveType.Infantry, 5) { Growths = new GrowthRates { HP = 42 } });
+            var cu = FreshKnight();
+            cu.ClassKey = "mercenary";
+            Check(CombatGains.ResolveGrowths(cu, db, new GrowthRates()).HP == 42, "class growths beat fallback");
+            Check(CombatGains.ResolveGrowths(gu, db, new GrowthRates { HP = 7 }).HP == 100, "unit growths beat class");
+
+            // SpriteKey round-trips through save/restore and transfer (was silently dropped).
+            var sp = FreshKnight(); sp.SpriteKey = "hero-alt";
+            var spState = ChapterState.StartNew(TestChapter(), 5);
+            FindByNid(spState, "hero").Unit.SpriteKey = "hero-alt";
+            var spSnap = SaveSystem.Save(spState);
+            var spBack = SaveSystem.Restore(spState.Chapter, spSnap, 5);
+            Check(FindByNid(spBack, "hero").Unit.SpriteKey == "hero-alt", "sprite survives save/restore");
+            var spRoster = CampaignRoster.Collect(spState);
+            var spNext = TestChapter(); spNext.Nid = "spn";
+            CampaignRoster.Apply(spNext, spRoster, new CampaignTransferOptions { HealFull = true });
+            string spGot = "";
+            foreach (var d in spNext.Deployments) if (d.Unit.Nid == "hero") spGot = d.Unit.SpriteKey;
+            Check(spGot == "hero-alt", "sprite survives chapter transfer");
+
+            // UsesLeft clamps to [0, MaxUses] across armory divergence.
+            var clampCh = TestChapter();
+            var overEntry = new InventorySnapshot { WeaponKey = "iron-sword", UsesLeft = 999, Weapon = SaveSystem.SnapshotWeapon(clampCh.Armory["iron-sword"]) };
+            var clamped = SaveSystem.ResolveEntry(clampCh, overEntry);
+            Check(clamped.UsesLeft == clampCh.Armory["iron-sword"].MaxUses, "over-full uses clamp to MaxUses");
+            var negEntry = new InventorySnapshot { WeaponKey = "iron-sword", UsesLeft = -5, Weapon = SaveSystem.SnapshotWeapon(clampCh.Armory["iron-sword"]) };
+            Check(SaveSystem.ResolveEntry(clampCh, negEntry).UsesLeft == 0, "negative uses clamp to 0");
+
+            // Full board: reserves with no free tile spill instead of duplicating (0,0).
+            var tinyBoard = new Board(1, 1, "plain", StandardTerrains.Create());
+            var tiny = new Chapter { Nid = "tiny", Title = "Tiny", Board = tinyBoard };
+            tiny.Armory["iron-sword"] = IronSword();
+            tiny.Deployments.Add(new Deployment(FreshKnight(), new GridPoint(0, 0)));
+            tiny.Victory.Add(ObjectiveSpec.RoutEnemies());
+            tiny.Defeat.Add(ObjectiveSpec.AllDead());
+            var tinyS = ChapterState.StartNew(tiny, 3);
+            var tinyRoster = CampaignRoster.Collect(tinyS);
+            var extra = FreshKnight().Clone("extra");
+            tinyRoster.Add(new UnitSnapshot
+            {
+                Nid = "extra", Name = "Extra", Side = Affiliation.Player, ClassKey = extra.ClassKey,
+                Level = 1, Stats = extra.Stats.Clone(), CurrentHP = 10, MovePoints = 5,
+                MovementGroup = extra.MovementGroup, Vision = 5,
+            });
+            var tinyNext = new Chapter { Nid = "tiny2", Title = "Tiny2", Board = new Board(1, 1, "plain", StandardTerrains.Create()) };
+            tinyNext.Armory["iron-sword"] = IronSword();
+            tinyNext.Deployments.Add(new Deployment(FreshKnight().Clone("keeper"), new GridPoint(0, 0)));
+            tinyNext.Victory.Add(ObjectiveSpec.RoutEnemies());
+            tinyNext.Defeat.Add(ObjectiveSpec.AllDead());
+            var tr = CampaignRoster.Apply(tinyNext, tinyRoster, new CampaignTransferOptions { HealFull = true });
+            Check(tr.spilled >= 1, $"reserve spills when board is full (spilled={tr.spilled})");
+            var seenTiles = new HashSet<string>();
+            bool dup = false;
+            foreach (var d in tinyNext.Deployments) if (!seenTiles.Add(d.Position.X + "," + d.Position.Y)) dup = true;
+            Check(!dup, "transfer never duplicates deployment tiles");
+
+            // Support tick is player-only: enemies never bond (no cross-side pollution).
+            var sledger = new SupportLedger();
+            var sfield = new Battlefield(OpenBoard(3, 3));
+            sfield.Deploy(FreshKnight().Clone("pa"), new GridPoint(0, 0));
+            sfield.Deploy(FreshBandit().Clone("eb"), new GridPoint(0, 1));
+            sfield.Deploy(FreshBandit().Clone("ec"), new GridPoint(2, 2));
+            sfield.Deploy(FreshBandit().Clone("ed"), new GridPoint(2, 1));
+            int sgained = sledger.TickAdjacent(sfield);
+            Check(sgained == 0, $"enemies gain no support points (gained={sgained})");
+
+            // Reserve tiles are landable: no wall/water placements from transfer.
+            var wallBoard = Board.FromRows(new[] { "...", ".W.", "..." }, "plain",
+                new Dictionary<char, string> { ['.'] = "plain", ['W'] = "wall" }, StandardTerrains.Create());
+            var wallNext = new Chapter { Nid = "wall", Title = "Wall", Board = wallBoard };
+            wallNext.Armory["iron-sword"] = IronSword();
+            wallNext.Deployments.Add(new Deployment(FreshKnight().Clone("w1"), new GridPoint(0, 0)));
+            wallNext.Victory.Add(ObjectiveSpec.RoutEnemies());
+            wallNext.Defeat.Add(ObjectiveSpec.AllDead());
+            var wallRoster = new List<UnitSnapshot>(tinyRoster);
+            var wr = CampaignRoster.Apply(wallNext, wallRoster, new CampaignTransferOptions { HealFull = true });
+            bool onWall = false;
+            foreach (var d in wallNext.Deployments)
+                if (wallBoard.GetTerrain(d.Position).Key == "wall" && d.Unit.Nid != "w1") onWall = true;
+            Check(!onWall, "reserves never land on impassable tiles");
+
+            // Shared-reference aliasing: mutating transferred chapter must not touch roster snapshot.
+            var snapHeroPower = -1;
+            foreach (var u in roster) if (u.Nid == "hero") snapHeroPower = u.Stats.Power;
+            foreach (var d in ch2.Deployments) if (d.Unit.Nid == "hero") d.Unit.Stats.Power = 999;
+            foreach (var u in roster) if (u.Nid == "hero") Check(u.Stats.Power == snapHeroPower, "transfer clones: roster insulated from chapter mutation");
+        }
+
         private static Chapter TestChapter()
         {
             var terrains = StandardTerrains.Create();
@@ -1008,7 +1189,7 @@ namespace SrpgCore.Verify
             var errors = bad.Validate();
             string joined = string.Join("|", errors);
             Check(errors.Count >= 4 && joined.Contains("off-board") && joined.Contains("Unknown event command")
-                    && joined.Contains("nobody") && joined.Contains("MaxDeploy"),
+                    && joined.Contains("nobody"),
                 $"validate reports all classes ({errors.Count} errors)");
             Check(TestChapter().Validate().Count == 0, "clean chapter validates");
         }

@@ -18,6 +18,8 @@ namespace SrpgCore.Data
         public int Jump { get; }
         /// <summary>Promotion target class key, null when this class cannot promote.</summary>
         public string? PromotesTo { get; }
+        /// <summary>Per-class level-up growth chances (0-100 each). Null = use host default.</summary>
+        public Tactics.GrowthRates? Growths { get; set; }
 
         /// <summary>Defines one class database entry with movement and promotion target.</summary>
         /// <param name="key">Database key other data references.</param>

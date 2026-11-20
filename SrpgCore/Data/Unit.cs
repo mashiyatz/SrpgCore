@@ -87,6 +87,9 @@ namespace SrpgCore.Data
         /// <summary>Weapon experience per type (see Data.WeaponRanks for thresholds).</summary>
         public Dictionary<WeaponType, int> Wexp { get; } = new Dictionary<WeaponType, int>();
 
+        /// <summary>Per-unit level-up growth chances (0-100 each). Null = fall back to class growths, then host default.</summary>
+        public Tactics.GrowthRates? Growths { get; set; }
+
         private readonly List<InventoryEntry> _inventory = new List<InventoryEntry>();
         /// <summary>Carried weapons with per-entry durability.</summary>
         public IList<InventoryEntry> Inventory => _inventory;
@@ -113,9 +116,10 @@ namespace SrpgCore.Data
                 AiType = AiType,
                 PatrolA = PatrolA,
                 PatrolB = PatrolB,
+                Growths = Growths?.Clone(),
             };
             foreach (InventoryEntry e in _inventory)
-                clone._inventory.Add(new InventoryEntry(e.Weapon, e.UsesLeft));
+                clone._inventory.Add(new InventoryEntry(e.Weapon.Clone(), e.UsesLeft));
             foreach (var kv in Wexp) clone.Wexp[kv.Key] = kv.Value;
             foreach (string s in Skills) clone.Skills.Add(s);
             foreach (var kv in Statuses) clone.Statuses[kv.Key] = kv.Value;

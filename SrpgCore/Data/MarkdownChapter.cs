@@ -322,6 +322,14 @@ namespace SrpgCore.Data
                     case "victory": victories.Add(value); break;
                     case "defeat": defeats.Add(value); break;
                     case "next": chapter.NextChapter = value; break;
+                    case "permadeath":
+                        {
+                            string v = value.Trim().ToLowerInvariant();
+                            if (v == "true" || v == "1" || v == "on" || v == "classic") chapter.Permadeath = true;
+                            else if (v == "false" || v == "0" || v == "off" || v == "casual") chapter.Permadeath = false;
+                            else fail(line, $"Bad permadeath '{value}' (want true/false).");
+                            break;
+                        }
                     case "music": chapter.MusicTrack = value; break;
                     case "weather":
                         {
@@ -567,6 +575,7 @@ namespace SrpgCore.Data
             string group = "", moveGroup = MovementGroups.Infantry, name = nid, spriteKey = "";
             var items = new List<string>();
             var skills = new List<string>();
+            Tactics.GrowthRates? growths = null;
             for (; at < cells.Length; at++)
             {
                 string tok = cells[at];
@@ -606,6 +615,21 @@ namespace SrpgCore.Data
                         foreach (string sk in v.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
                             if (sk.Trim().Length > 0) skills.Add(sk.Trim());
                         break;
+                    case "growth":
+                    case "growths":
+                        {
+                            string[] parts = v.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                            if (parts.Length != 7) { fail(raw.Line, $"Bad growths '{v}' (want 7 comma-separated 0-100: hp,pow,skl,spd,lck,def,res)."); return; }
+                            var g = new Tactics.GrowthRates();
+                            int[] vals = new int[7];
+                            for (int gi = 0; gi < 7; gi++)
+                                if (!int.TryParse(parts[gi].Trim(), out vals[gi]) || vals[gi] < 0 || vals[gi] > 100)
+                                { fail(raw.Line, $"Bad growths '{v}' (each 0-100)."); return; }
+                            g.HP = vals[0]; g.Power = vals[1]; g.Skill = vals[2]; g.Speed = vals[3];
+                            g.Luck = vals[4]; g.Defense = vals[5]; g.Resistance = vals[6];
+                            growths = g;
+                            break;
+                        }
                     case "items":
                         foreach (string w in v.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
                             items.Add(w.Trim());
@@ -629,6 +653,7 @@ namespace SrpgCore.Data
                 Vision = vision,
                 SpriteKey = spriteKey,
             };
+            if (growths != null) unit.Growths = growths;
             foreach (string sk in skills) unit.Skills.Add(sk);
             // apply ai/patrol tokens (validated above, re-parse)
             for (int ti = need; ti < cells.Length; ti++)

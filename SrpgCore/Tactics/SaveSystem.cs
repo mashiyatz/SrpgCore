@@ -40,6 +40,8 @@ namespace SrpgCore.Tactics
         public Dictionary<WeaponType, int> Wexp = new Dictionary<WeaponType, int>();
         /// <summary>Nid of the carried passenger (empty when hands-free).</summary>
         public string CarryingNid = "";
+        /// <summary>Per-unit art override key ("" = class art). Display-only; round-trips through saves.</summary>
+        public string SpriteKey = "";
         /// <summary>AI type (rush/hold) persisted across saves.</summary>
         public string AiType = "rush";
         /// <summary>Patrol waypoint A for patrol AI.</summary>
@@ -48,6 +50,72 @@ namespace SrpgCore.Tactics
         public GridPoint PatrolB;
         /// <summary>Inventory as armory weapon keys with uses left.</summary>
         public List<InventorySnapshot> Inventory = new List<InventorySnapshot>();
+        /// <summary>Per-unit growth chances (null = class or host default).</summary>
+        public GrowthSnapshot? Growths;
+    }
+
+    /// <summary>Full weapon definition for JSON-safe saves. Carried weapons round-trip by value so armory keys are not a cross-chapter contract.</summary>
+    public sealed class WeaponSnapshot
+    {
+        /// <summary>Database key.</summary>
+        public string Key = "";
+        /// <summary>Display name.</summary>
+        public string Name = "";
+        /// <summary>Damage family.</summary>
+        public WeaponType Type;
+        /// <summary>Minimum rank letter.</summary>
+        public WeaponRank Rank;
+        /// <summary>Base damage.</summary>
+        public int Might;
+        /// <summary>Base accuracy.</summary>
+        public int Hit;
+        /// <summary>Base critical rate.</summary>
+        public int Crit;
+        /// <summary>Heft.</summary>
+        public int Weight;
+        /// <summary>Minimum range.</summary>
+        public int MinRange;
+        /// <summary>Maximum range.</summary>
+        public int MaxRange;
+        /// <summary>Full durability.</summary>
+        public int MaxUses;
+        /// <summary>True when damage targets resistance.</summary>
+        public bool IsMagic;
+        /// <summary>True when counterattacks are allowed.</summary>
+        public bool CanCounter = true;
+        /// <summary>Effectiveness tags.</summary>
+        public List<string> EffectiveAgainst = new List<string>();
+        /// <summary>Staff heal power.</summary>
+        public int HealPower;
+        /// <summary>Status effect name.</summary>
+        public string StatusEffect = "";
+        /// <summary>Status duration.</summary>
+        public int StatusDuration;
+        /// <summary>True when stealable.</summary>
+        public bool CanSteal = true;
+        /// <summary>True when triangle is reversed.</summary>
+        public bool ReversesTriangle;
+        /// <summary>Shop price.</summary>
+        public int Price;
+    }
+
+    /// <summary>Per-stat growth chances for JSON-safe saves (0-100 each).</summary>
+    public sealed class GrowthSnapshot
+    {
+        /// <summary>MaxHP growth.</summary>
+        public int HP;
+        /// <summary>Power growth.</summary>
+        public int Power;
+        /// <summary>Skill growth.</summary>
+        public int Skill;
+        /// <summary>Speed growth.</summary>
+        public int Speed;
+        /// <summary>Luck growth.</summary>
+        public int Luck;
+        /// <summary>Defense growth.</summary>
+        public int Defense;
+        /// <summary>Resistance growth.</summary>
+        public int Resistance;
     }
 
     /// <summary>One inventory entry for JSON-safe saves.</summary>
@@ -57,6 +125,8 @@ namespace SrpgCore.Tactics
         public string WeaponKey = "";
         /// <summary>Uses remaining.</summary>
         public int UsesLeft;
+        /// <summary>Full weapon definition carried by value (null on old saves: resolve via armory).</summary>
+        public WeaponSnapshot? Weapon;
     }
 
     /// <summary>One support pair for JSON-safe saves.</summary>
@@ -144,10 +214,75 @@ namespace SrpgCore.Tactics
     /// <summary>
     /// Save/restore over a ChapterState. Units serialize fully (no template lookup on load);
     /// weapons resolve through chapter.Armory by key, so armory keys are the save contract.
+    /// Snapshots also carry full weapon definitions by value, so RestoreWithWeapons can
+    /// rebuild carried weapons without the next chapter sharing armory keys.
     /// Deterministic: RNG stream states round-trip, so post-load rolls continue the sequence.
     /// </summary>
     public static class SaveSystem
     {
+        /// <summary>Captures a weapon definition by value for campaign transfer.</summary>
+        /// <param name="w">Weapon to snapshot.</param>
+        /// <returns>Value snapshot of the weapon.</returns>
+        public static WeaponSnapshot SnapshotWeapon(Weapon w)
+        {
+            if (w == null) throw new ArgumentNullException(nameof(w));
+            var s = new WeaponSnapshot
+            {
+                Key = w.Key, Name = w.Name, Type = w.Type, Rank = w.Rank,
+                Might = w.Might, Hit = w.Hit, Crit = w.Crit, Weight = w.Weight,
+                MinRange = w.MinRange, MaxRange = w.MaxRange, MaxUses = w.MaxUses,
+                IsMagic = w.IsMagic, CanCounter = w.CanCounter, HealPower = w.HealPower,
+                StatusEffect = w.StatusEffect, StatusDuration = w.StatusDuration,
+                CanSteal = w.CanSteal, ReversesTriangle = w.ReversesTriangle, Price = w.Price,
+            };
+            foreach (string t in w.EffectiveAgainst) s.EffectiveAgainst.Add(t);
+            return s;
+        }
+
+        /// <summary>Rebuilds a weapon from a value snapshot (campaign transfer path).</summary>
+        /// <param name="s">Snapshot to rebuild.</param>
+        /// <returns>Weapon equivalent to the snapshot.</returns>
+        public static Weapon WeaponFromSnapshot(WeaponSnapshot s)
+        {
+            if (s == null) throw new ArgumentNullException(nameof(s));
+            var w = new Weapon(s.Key, s.Name, s.Type, s.Rank, s.Might, s.Hit, s.Crit,
+                s.Weight, s.MinRange, s.MaxRange, Math.Max(1, s.MaxUses), s.IsMagic)
+            {
+                CanCounter = s.CanCounter, HealPower = s.HealPower,
+                StatusEffect = s.StatusEffect ?? "", StatusDuration = s.StatusDuration,
+                CanSteal = s.CanSteal, ReversesTriangle = s.ReversesTriangle, Price = s.Price,
+            };
+            foreach (string t in s.EffectiveAgainst ?? new List<string>()) w.EffectiveAgainst.Add(t);
+            return w;
+        }
+
+        /// <summary>Resolves an inventory entry: snapshot definition wins, armory is the fallback for old saves. UsesLeft clamps to [0, MaxUses] so cross-chapter armory divergence never banks over-full or negative durability.</summary>
+        /// <param name="chapter">Chapter providing the armory fallback.</param>
+        /// <param name="inv">Inventory snapshot.</param>
+        /// <returns>Live inventory entry.</returns>
+        public static InventoryEntry ResolveEntry(Chapter chapter, InventorySnapshot inv)
+        {
+            if (inv?.Weapon != null)
+            {
+                Weapon w = WeaponFromSnapshot(inv.Weapon);
+                return new InventoryEntry(w, Math.Max(0, Math.Min(inv.UsesLeft, w.MaxUses)));
+            }
+            if (chapter.Armory.TryGetValue(inv!.WeaponKey, out Weapon? w2))
+                return new InventoryEntry(w2, Math.Max(0, Math.Min(inv.UsesLeft, w2.MaxUses)));
+            throw new InvalidOperationException($"Armory has no '{inv.WeaponKey}' (save contract).");
+        }
+
+        private static GrowthSnapshot? SnapshotGrowths(Tactics.GrowthRates? g)
+        {
+            if (g == null) return null;
+            return new GrowthSnapshot { HP = g.HP, Power = g.Power, Skill = g.Skill, Speed = g.Speed, Luck = g.Luck, Defense = g.Defense, Resistance = g.Resistance };
+        }
+
+        private static Tactics.GrowthRates? GrowthsFromSnapshot(GrowthSnapshot? s)
+        {
+            if (s == null) return null;
+            return new Tactics.GrowthRates { HP = s.HP, Power = s.Power, Skill = s.Skill, Speed = s.Speed, Luck = s.Luck, Defense = s.Defense, Resistance = s.Resistance };
+        }
         /// <summary>Snapshots positions, stats, inventory uses, turn state, vars, and RNG states.</summary>
         /// <param name="state">Live chapter runtime to snapshot.</param>
         /// <returns>Plain DTO snapshot the host can serialize.</returns>
@@ -165,7 +300,7 @@ namespace SrpgCore.Tactics
             };
             foreach (var kv in state.Vars) snap.Vars[kv.Key] = kv.Value;
             snap.PartyGold = state.PartyGold;
-            foreach (var e in state.Convoy) snap.Convoy.Add(new InventorySnapshot { WeaponKey = e.Weapon.Key, UsesLeft = e.UsesLeft });
+            foreach (var e in state.Convoy) snap.Convoy.Add(new InventorySnapshot { WeaponKey = e.Weapon.Key, UsesLeft = e.UsesLeft, Weapon = SnapshotWeapon(e.Weapon) });
             var sup = new List<(string a, string b, int p)>();
             foreach (var pp in state.Supports.AllPairs()) sup.Add((pp.key.a, pp.key.b, pp.points));
             sup.Sort((x, y) => { int c = string.CompareOrdinal(x.a, y.a); return c != 0 ? c : string.CompareOrdinal(x.b, y.b); });
@@ -202,6 +337,7 @@ namespace SrpgCore.Tactics
                     MovementGroup = p.Unit.MovementGroup,
                     Vision = p.Unit.Vision,
                     CarryingNid = p.Unit.CarryingNid,
+                    SpriteKey = p.Unit.SpriteKey,
                     AiType = p.Unit.AiType,
                     PatrolA = p.Unit.PatrolA,
                     PatrolB = p.Unit.PatrolB,
@@ -211,8 +347,9 @@ namespace SrpgCore.Tactics
                 var wkeys = new List<WeaponType>(p.Unit.Wexp.Keys);
                 wkeys.Sort();
                 foreach (WeaponType wk in wkeys) u.Wexp[wk] = p.Unit.Wexp[wk];
+                u.Growths = SnapshotGrowths(p.Unit.Growths);
                 foreach (InventoryEntry e in p.Unit.Inventory)
-                    u.Inventory.Add(new InventorySnapshot { WeaponKey = e.Weapon.Key, UsesLeft = e.UsesLeft });
+                    u.Inventory.Add(new InventorySnapshot { WeaponKey = e.Weapon.Key, UsesLeft = e.UsesLeft, Weapon = SnapshotWeapon(e.Weapon) });
                 snap.Placed.Add(new PlacedSnapshot { Unit = u, X = p.Position.X, Y = p.Position.Y });
             }
             foreach (var kv in state.Carried)
@@ -233,6 +370,7 @@ namespace SrpgCore.Tactics
                     MovementGroup = cu.MovementGroup,
                     Vision = cu.Vision,
                     CarryingNid = cu.CarryingNid,
+                    SpriteKey = cu.SpriteKey,
                     AiType = cu.AiType,
                     PatrolA = cu.PatrolA,
                     PatrolB = cu.PatrolB,
@@ -242,8 +380,9 @@ namespace SrpgCore.Tactics
                 var cwkeys = new List<WeaponType>(cu.Wexp.Keys);
                 cwkeys.Sort();
                 foreach (WeaponType wk in cwkeys) u.Wexp[wk] = cu.Wexp[wk];
+                u.Growths = SnapshotGrowths(cu.Growths);
                 foreach (InventoryEntry e in cu.Inventory)
-                    u.Inventory.Add(new InventorySnapshot { WeaponKey = e.Weapon.Key, UsesLeft = e.UsesLeft });
+                    u.Inventory.Add(new InventorySnapshot { WeaponKey = e.Weapon.Key, UsesLeft = e.UsesLeft, Weapon = SnapshotWeapon(e.Weapon) });
                 snap.Carried.Add(u);
             }
             snap.Carried.Sort((a, b) => string.CompareOrdinal(a.Nid, b.Nid));
@@ -252,7 +391,7 @@ namespace SrpgCore.Tactics
             return snap;
         }
 
-        /// <summary>Rebuilds an equivalent chapter state from a snapshot; armory keys are the save contract.</summary>
+        /// <summary>Rebuilds an equivalent chapter state from a snapshot. Carried weapons prefer snapshot definitions by value; armory is the fallback for old saves.</summary>
         /// <param name="chapter">Chapter providing board, armory, and event definitions.</param>
         /// <param name="snap">Snapshot to restore.</param>
         /// <param name="baseSeed">Base seed for the fresh state before RNG states are applied.</param>
@@ -280,6 +419,7 @@ namespace SrpgCore.Tactics
                     MovementGroup = ps.Unit.MovementGroup,
                     Vision = ps.Unit.Vision,
                     CarryingNid = ps.Unit.CarryingNid,
+                    SpriteKey = ps.Unit.SpriteKey ?? "",
                     AiType = ps.Unit.AiType,
                     PatrolA = ps.Unit.PatrolA,
                     PatrolB = ps.Unit.PatrolB,
@@ -287,11 +427,10 @@ namespace SrpgCore.Tactics
                 foreach (string sk in ps.Unit.Skills) unit.Skills.Add(sk);
                 foreach (var kv in ps.Unit.Statuses) unit.Statuses[kv.Key] = kv.Value;
                 foreach (var kv in ps.Unit.Wexp) unit.Wexp[kv.Key] = kv.Value;
+                unit.Growths = GrowthsFromSnapshot(ps.Unit.Growths);
                 foreach (var inv in ps.Unit.Inventory)
                 {
-                    if (!chapter.Armory.TryGetValue(inv.WeaponKey, out Weapon? w))
-                        throw new InvalidOperationException($"Armory has no '{inv.WeaponKey}' (save contract).");
-                    unit.Inventory.Add(new InventoryEntry(w, inv.UsesLeft));
+                    unit.Inventory.Add(ResolveEntry(chapter, inv));
                 }
                 state.Field.Deploy(unit, new GridPoint(ps.X, ps.Y));
             }
@@ -308,6 +447,7 @@ namespace SrpgCore.Tactics
                     MovementGroup = us.MovementGroup,
                     Vision = us.Vision,
                     CarryingNid = us.CarryingNid,
+                    SpriteKey = us.SpriteKey ?? "",
                     AiType = us.AiType,
                     PatrolA = us.PatrolA,
                     PatrolB = us.PatrolB,
@@ -315,11 +455,10 @@ namespace SrpgCore.Tactics
                 foreach (string sk in us.Skills) unit.Skills.Add(sk);
                 foreach (var kv in us.Statuses) unit.Statuses[kv.Key] = kv.Value;
                 foreach (var kv in us.Wexp) unit.Wexp[kv.Key] = kv.Value;
+                unit.Growths = GrowthsFromSnapshot(us.Growths);
                 foreach (var inv in us.Inventory)
                 {
-                    if (!chapter.Armory.TryGetValue(inv.WeaponKey, out Weapon? w2c))
-                        throw new InvalidOperationException($"Armory has no '{inv.WeaponKey}' (save contract).");
-                    unit.Inventory.Add(new InventoryEntry(w2c, inv.UsesLeft));
+                    unit.Inventory.Add(ResolveEntry(chapter, inv));
                 }
                 state.Carried[unit.Nid] = unit;
             }
@@ -328,9 +467,7 @@ namespace SrpgCore.Tactics
             state.Convoy.Clear();
             foreach (var inv in snap.Convoy)
             {
-                if (!chapter.Armory.TryGetValue(inv.WeaponKey, out Weapon? w2))
-                    throw new InvalidOperationException($"Armory has no '{inv.WeaponKey}' (convoy).");
-                state.Convoy.Add(new InventoryEntry(w2, inv.UsesLeft));
+                state.Convoy.Add(ResolveEntry(chapter, inv));
             }
             foreach (var sp in snap.SupportPoints)
                 state.Supports.SetPoints(sp.A, sp.B, sp.Points);

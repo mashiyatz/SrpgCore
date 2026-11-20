@@ -25,7 +25,7 @@ a web backend, Prowl, ...) consumes it the same way. This is the IP; keep it eng
 
 - `dotnet build SrpgCore.slnx` — build the library and verifier.
 - `dotnet run --project SrpgCore.Verify/SrpgCore.Verify.csproj` — run all checks
-  (526 checks across grid, RNG, combat, events, phases, objectives, AI, chapters,
+  (571 checks across grid, RNG, combat, events, phases, objectives, AI, chapters,
   durability/effectiveness, experience, staves, new event verbs, terrain-aware AI,
   seize, saves, promotion, fog, rescue, skills, support, statuses, staff accuracy,
   combat gains, skill/support battle math, battle triggers, phase tick, deployment

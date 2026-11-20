@@ -214,6 +214,8 @@ namespace SrpgCore.Data
         public string FormationRegion { get; set; } = "";
         /// <summary>Nid of the following chapter, empty when this chapter ends the chain.</summary>
         public string NextChapter { get; set; } = "";
+        /// <summary>When true, player units that fall stay dead across campaign transfer; when false they revive next chapter.</summary>
+        public bool Permadeath { get; set; }
         /// <summary>Presentation music track (pack music name), empty for the pack default.</summary>
         public string MusicTrack { get; set; } = "";
         /// <summary>Presentation weather (host-interpreted), empty for clear. Loader admits rain|storm.</summary>
@@ -242,7 +244,6 @@ namespace SrpgCore.Data
                 }
 
             var nids = new HashSet<string>();
-            int turnOnePlayers = 0;
             foreach (Deployment d in Deployments)
             {
                 if (!Board.InBounds(d.Position))
@@ -251,11 +252,10 @@ namespace SrpgCore.Data
                     errors.Add($"Deployment '{d.Unit.Nid}' has spawn turn {d.SpawnTurn} (min 1).");
                 if (!nids.Add(d.Unit.Nid))
                     errors.Add($"Duplicate deployment nid '{d.Unit.Nid}'.");
-                if (d.SpawnTurn == 1 && d.Unit.Side == Affiliation.Player) turnOnePlayers++;
             }
             if (MaxDeploy < 0) errors.Add($"MaxDeploy {MaxDeploy} is negative.");
-            if (MaxDeploy > 0 && turnOnePlayers > MaxDeploy)
-                errors.Add($"{turnOnePlayers} turn-1 player units exceed MaxDeploy {MaxDeploy}.");
+            // Surplus turn-1 players are legal: the deploy screen benches beyond
+            // DeploySlotCount (campaign rosters grow via recruits; MaxDeploy is a cap, not an exact count).
             if (MaxInventory < 1) errors.Add($"MaxInventory {MaxInventory} must be at least 1.");
             foreach (Deployment d in Deployments)
                 if (d.Unit.Inventory.Count > MaxInventory)

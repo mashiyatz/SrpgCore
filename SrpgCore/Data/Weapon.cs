@@ -58,6 +58,20 @@ namespace SrpgCore.Data
         /// <summary>True when this weapon reverses weapon-triangle advantage (reaver weapons, default false).</summary>
         public bool ReversesTriangle { get; set; } = false;
 
+        /// <summary>Copies every field into a fresh definition (clone-on-carry; definitions are otherwise shared).</summary>
+        /// <returns>A new weapon with identical stats and flags.</returns>
+        public Weapon Clone()
+        {
+            var c = new Weapon(Key, Name, Type, Rank, Might, Hit, Crit, Weight, MinRange, MaxRange, MaxUses, IsMagic)
+            {
+                CanCounter = CanCounter, HealPower = HealPower, StatusEffect = StatusEffect,
+                StatusDuration = StatusDuration, CanSteal = CanSteal,
+                ReversesTriangle = ReversesTriangle, Price = Price,
+            };
+            foreach (string t in EffectiveAgainst) c.EffectiveAgainst.Add(t);
+            return c;
+        }
+
         /// <summary>Shop price in gold. 0 = not for sale (spawn pool only).</summary>
         public int Price { get; set; }
 

@@ -68,14 +68,14 @@ set_flag;foe1_down;true
   comment. `<!-- -->` blocks are stripped. Sections arrive in any order.
 - `META`: `format: 1` is required (newer formats fail loudly). `victory:` is `rout`,
   `survive N`, `seize <unit> <region>`, or `event`; `defeat:` lines accumulate (`all_dead`, `protect a,b`,
-  `event`). `objective:` is display text only; `next:` links chapters. `maxDeploy:` caps the turn-1 player roster (0 = everyone); `maxinventory:` / `max_inventory:` caps per-unit inventory (default 5, validated against deployments and templates).
+  `event`). `objective:` is display text only; `next:` links chapters. `maxDeploy:` caps the deployed turn-1 player squad (0 = everyone; surplus roster units wait benched on the deploy screen). `maxinventory:` / `max_inventory:` caps per-unit inventory (default 5, validated against deployments and templates). `permadeath: true|false` toggles classic death permanence across campaign transfer (default false: the fallen revive next chapter).
 - `LEGEND` maps one character to a terrain key; `MAP` rows must be rectangular.
   Standard terrain keys work without declaration.
 - `ARMORY` rows: `key name type rank might hit crit wt minR-maxR uses [magic] [effective:a,b] [heal:N] [status:name:N] [price:N]`
   (`Iron_Sword` underscores become spaces; `price:N` lists the weapon in village shops, 0/absent = spawn pool only).
   (`Iron_Sword` underscores become spaces). `TEMPLATES` and `UNITS` share the row
   shape `x,y nid side class lvl hp pow skl spd lck def res con` (position omitted for
-  templates) plus `turn:N group:G move:M type:T name:N vision:V skill:a,b items:a,b ai:rush|hold|patrol patrol:x,y~x,y` options. `ai` sets `Unit.AiType`; `patrol` sets `PatrolA/B` waypoints (hex-ready via `TbsGridAdapter`).
+  templates) plus `turn:N group:G move:M type:T name:N vision:V skill:a,b growths:hp,pow,skl,spd,lck,def,res items:a,b ai:rush|hold|patrol patrol:x,y~x,y` options. `ai` sets `Unit.AiType`; `patrol` sets `PatrolA/B` waypoints (hex-ready via `TbsGridAdapter`). `growths:` sets per-unit level-up chances (0-100 each, 7 comma-separated); absent units fall back to class then host defaults. Campaign saves carry weapons by value, so chapters may diverge armories — carried items keep their origin stats.
 - `TERRAINS` rows: `key name inf arm cav fly avoid def [hp:N] [group:cost]`.
   Custom keys must be new; unknown groups default to cost 1.
 - `REGIONS` rows: `name kind x0,y0 x1,y1` (inclusive rect; kind is
