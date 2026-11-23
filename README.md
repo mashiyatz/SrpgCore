@@ -4,7 +4,7 @@ Deterministic Fire Emblem-style tactics engine in pure C#. No rendering, no engi
 
 - Target: `netstandard2.0`, zero dependencies. Runs anywhere .NET runs.
 - Deterministic: one seeded RNG stream per concern (combat, growths). Same seed + same inputs = same battle, every time.
-- Tested: `SrpgCore.Verify` offline console verifier — **571 checks, 0 failures**. No test packages, runs anywhere `dotnet` exists.
+- Tested: `SrpgCore.Verify` offline console verifier - **575 checks, 0 failures**. No test packages, runs anywhere `dotnet` exists.
 
 ## Layout
 
@@ -19,7 +19,7 @@ Deterministic Fire Emblem-style tactics engine in pure C#. No rendering, no engi
 ```bash
 dotnet build SrpgCore.slnx
 dotnet run --project SrpgCore.Verify/SrpgCore.Verify.csproj
-# expect: 571 passed, 0 failed
+# expect: 575 passed, 0 failed
 ```
 
 Reference the library from any host:

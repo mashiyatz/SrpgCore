@@ -108,5 +108,11 @@ ChapterState state = ChapterState.StartNew(chapter, seed: 4242);
 - Names, keys, and nids are whitespace-separated cells, so multi-word display names
   use underscores (`Iron_Sword` becomes "Iron Sword", `name:` works the same way).
   Event lines split on `;`, so dialogue text must avoid semicolons — an extra `;`
-  breaks the verb's arity and fails the load. Every violation reports
-  `file:line: message`, and a failed load returns no chapter.
+  breaks the verb's arity and fails the load. Conditions are bounded (length and
+  `&&`-clause caps; stray single `&`, empty clauses, and unterminated quotes fail
+  the load), `wait` takes finite seconds in `0..600`, and oversized
+  events/commands/conditions are rejected with `file:line`. Every violation reports
+  `file:line: message`, and a failed load returns no chapter. Hosts may
+  additionally run chapters under a Restricted event policy that denies
+  high-impact verbs (`spawn_unit`, `remove_unit`, `set_terrain`, `gold`,
+  `buy`/`sell`, `win`/`lose`) at validation time.

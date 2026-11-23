@@ -109,7 +109,7 @@ namespace SrpgCore.Events
                 ["set_terrain"]   = (2, 2, "set_terrain;x,y;terrainKey — change board terrain at tile."),
                 ["play_sound"]    = (1, 2, "play_sound;sfx[;volume] — presentation blip, no state."),
                 ["play_music"]    = (1, 3, "play_music;track[;loop|once[;fadeSecs]] — presentation music, loops by default, no state."),
-                ["queue_music"]   = (1, 2, "queue_music;track[;loop|once] — start when current once-track ends, no state."),
+                ["queue_music"]   = (1, 2, "queue_music;track[;loop|once] — start at the next clean boundary (once-track end or loop end), no state."),
                 ["crossfade_music"] = (1, 3, "crossfade_music;track[;seconds[;loop|once]] — fade-out/in switch, no state."),
                 ["stop_music"]    = (0, 1, "stop_music[;fadeSecs] — stop presentation music, no state."),
                 ["show_effect"]   = (2, 3, "show_effect;effect;x,y[;ttl] — presentation flash, no state."),
@@ -247,6 +247,27 @@ namespace SrpgCore.Events
         public static IEnumerable<(string verb, string help)> List()
         {
             foreach (var kv in Commands) yield return (kv.Key, kv.Value.help);
+        }
+
+        /// <summary>Validates a free-text dialogue line ("speaker: text") with the loader's shape rules.</summary>
+        /// <param name="text">The line without the leading "- " marker.</param>
+        /// <param name="error">The reason the line is invalid, or null when valid.</param>
+        /// <returns>True when the line has a speaker, text, fits the length cap, and avoids semicolons.</returns>
+        public static bool TryValidateDialogue(string? text, out string? error)
+        {
+            text ??= "";
+            if (text.Length > EventLimits.MaxCommandLength)
+            { error = $"Dialogue line too long ({text.Length} > {EventLimits.MaxCommandLength})."; return false; }
+            int colon = text.IndexOf(':');
+            if (colon < 0) { error = "Dialogue lines are '- speaker: text'."; return false; }
+            string speaker = text.Substring(0, colon).Trim();
+            string spoken = text.Substring(colon + 1).Trim();
+            if (speaker.Length == 0 || spoken.Length == 0)
+            { error = "Dialogue lines need a speaker and text."; return false; }
+            if (speaker.Contains(";") || spoken.Contains(";"))
+            { error = "Dialogue text must avoid semicolons (they split command args)."; return false; }
+            error = null;
+            return true;
         }
     }
 }

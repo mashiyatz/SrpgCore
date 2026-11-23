@@ -66,7 +66,10 @@ Tiny expression language for gating ([`SimpleConditionEvaluator`](api-events.md#
 `path op literal` with `==`, `!=`, `>`, `<`, `>=`, `<=`. Paths resolve into nested
 dictionaries (`unit.nid`), literals are `'quoted'`, numbers, or true/false. Unknown
 paths are null and never equal a literal. Operators inside quotes are ignored, so
-`name == 'a==b'` splits correctly.
+`name == 'a==b'` splits correctly. `&&` inside quotes is literal too
+(`name == 'a && b'`), while a stray single `&` or an empty clause is a load-time
+error. Conditions are bounded (length and clause caps in `EventLimits`);
+overlong input fails fast with a position.
 
 ## Running
 
@@ -76,6 +79,30 @@ runs all same-trigger events by descending priority (then name), and stops at th
 first error. Effects reach the world only through [`IEventExecutor`](api-events.md#ieventexecutor), which the
 headless [`ChapterRunner`](api-tactics.md#chapterrunner) and each host's own presentation layer implement (see
 [hosting](hosting.md)).
+
+## Hardening (limits, policy, orchestration)
+
+Adversarial or malformed content fails fast instead of hanging or half-applying:
+
+- `EventLimits` caps command length, condition
+  length/clauses, commands per event, and events per chapter. The loader reports
+  `file:line` for every breach; the evaluator throws `FormatException`.
+- `wait` takes a finite numeric seconds value in `0..MaxWaitSeconds`
+  (600s); `NaN`, infinities, negatives, and over-max values are rejected.
+- Verbs are letter-led `letters/digits/underscore` tokens; dialogue text must
+  avoid semicolons (they split command args).
+- `EventPolicy` classifies high-impact verbs
+  (`spawn_unit`, `remove_unit`, `set_terrain`, `gold`, `buy`, `sell`, `win`,
+  `lose`). `Trusted` (default) allows the full catalog; `Restricted` denies
+  those verbs at validation time. Hosts select the mode (e.g. SRPGMono's
+  `--restricted-events` play flag) and thread it through dispatch, talk, and
+  cutscene validation so all three agree.
+- `EventOrchestrator` is the single
+  authoritative pipeline: match trigger, sort priority/name, evaluate condition
+  (trigger vars win over chapter state vars), validate every command up front
+  with the active policy, then mark whether the event needs staged presentation.
+  Hosts execute inline or staged per plan and stop at the first error plan;
+  one-line diagnostics carry event, trigger, command index, verb, and mode.
 
 ```csharp
 // Author inline, run headless, or dispatch by trigger with vars.

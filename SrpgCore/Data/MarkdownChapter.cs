@@ -815,16 +815,11 @@ namespace SrpgCore.Data
 
         private static string? DesugarDialogue(string text, int lineNo, Action<int, string> fail)
         {
-            if (text.Length > EventLimits.MaxCommandLength)
-            { fail(lineNo, $"Dialogue line too long ({text.Length} > {EventLimits.MaxCommandLength})."); return null; }
+            if (!CommandCatalog.TryValidateDialogue(text, out string? error))
+            { fail(lineNo, error ?? "Bad dialogue line."); return null; }
             int colon = text.IndexOf(':');
-            if (colon < 0) { fail(lineNo, "Dialogue lines are '- speaker: text'."); return null; }
             string speaker = text.Substring(0, colon).Trim();
             string spoken = text.Substring(colon + 1).Trim();
-            if (speaker.Length == 0 || spoken.Length == 0)
-            { fail(lineNo, "Dialogue lines need a speaker and text."); return null; }
-            if (speaker.Contains(";") || spoken.Contains(";"))
-            { fail(lineNo, "Dialogue text must avoid semicolons (they split command args)."); return null; }
             return "speak;" + speaker + ";" + spoken;
         }
 

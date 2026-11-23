@@ -330,6 +330,12 @@ namespace SrpgCore.Verify
                 "unknown verb rejected");
             Check(!CommandCatalog.TryValidate(new EventCommand("speak", new[] { "OnlyOne" }), out _),
                 "wrong arity rejected");
+            Check(CommandCatalog.TryValidateDialogue("Eirika: Hold the line!", out _),
+                "dialogue line validates");
+            Check(!CommandCatalog.TryValidateDialogue("No colon here", out string? dNoColon) && dNoColon != null,
+                "dialogue without colon rejected");
+            Check(!CommandCatalog.TryValidateDialogue("Eirika: a;b", out _),
+                "dialogue semicolons rejected");
 
             var vars = new Dictionary<string, object?>
             {
@@ -815,6 +821,33 @@ namespace SrpgCore.Verify
                 new Dictionary<string, object?>(), new[] { bad, after });
             Check(failPlans.Count == 1 && failPlans[0].Error != null && failPlans[0].FailingCommandIndex == 0,
                 "orchestrator fail-fast with command index");
+
+            // Dispatcher parity: same events/vars agree on ran + error outcomes.
+            // (Filtered events report Ran=false with no error in both pipelines.)
+            var parA = new GameEvent("a-first", EventTrigger.LevelStart);
+            parA.AddCommand("say;Narrator;First.");
+            var parB = new GameEvent("b-gated", EventTrigger.LevelStart, "flag == true");
+            parB.AddCommand("say;Narrator;Gated.");
+            var parC = new GameEvent("c-bad", EventTrigger.LevelStart);
+            parC.AddCommand("frobnicate;now");
+            var parAll = new[] { parA, parB, parC };
+            var parVars = new Dictionary<string, object?>();
+            var parRec = new RecordingExecutor();
+            var parDisp = EventDispatcher.Dispatch(EventTrigger.LevelStart, parVars, parVars, parAll, parRec);
+            var parOrch = EventOrchestrator.PlanDispatch(EventTrigger.LevelStart, parVars, parAll);
+            // Parity: same order, same error positions; for clean plans Ran == Passes.
+            // (Error plans differ by design: the dispatcher reports Ran=false while the
+            // orchestrator keeps Passes=true for "condition passed" alongside the error.)
+            bool parity = parDisp.Count == parOrch.Count;
+            for (int i = 0; parity && i < parDisp.Count; i++)
+            {
+                bool errBoth = (parDisp[i].Error != null) && (parOrch[i].Error != null);
+                bool errNeither = (parDisp[i].Error == null) && (parOrch[i].Error == null);
+                parity = (errBoth && !parDisp[i].Ran)
+                    || (errNeither && parDisp[i].Ran == parOrch[i].Passes);
+            }
+            Check(parity && parDisp.Count == 3 && parRec.Ran.Count == 1,
+                "dispatcher and orchestrator agree on ran/error");
 
             var win = new GameEvent("win", EventTrigger.LevelStart);
             win.AddCommand("win");
